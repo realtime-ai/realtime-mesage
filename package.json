@@ -1,0 +1,32 @@
+{
+  "name": "realtime-mesage",
+  "version": "1.0.0",
+  "description": "Realtime presence service built with Socket.IO and Redis",
+  "main": "dist/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "ts-node src/server.ts",
+    "start": "node dist/server.js"
+  },
+  "keywords": [
+    "socket.io",
+    "redis",
+    "presence"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@socket.io/redis-adapter": "^8.3.0",
+    "dotenv": "^17.2.2",
+    "ioredis": "^5.7.0",
+    "socket.io": "^4.8.1",
+    "uuid": "^13.0.0",
+    "zod": "^4.1.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
+  }
+}
