@@ -42,7 +42,11 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "moduleResolution": "node",
+<<<<<<< HEAD
   },
   "include": ["src/**/*.ts"],
   "exclude": ["src/**/*.test.ts", "src/**/*.spec.ts"]
+=======
+  }
+>>>>>>> origin/main
 }

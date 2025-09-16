@@ -7,8 +7,12 @@
   "scripts": {
     "build": "tsc --project tsconfig.json",
     "dev": "ts-node src/server.ts",
+<<<<<<< HEAD
     "start": "node dist/server.js",
     "test": "vitest run"
+=======
+    "start": "node dist/server.js"
+>>>>>>> origin/main
   },
   "keywords": [
     "socket.io",
@@ -27,10 +31,15 @@
   },
   "devDependencies": {
     "@types/node": "^24.5.0",
+<<<<<<< HEAD
     "@types/ioredis-mock": "^8.2.6",
     "ioredis-mock": "^8.9.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
+=======
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
+>>>>>>> origin/main
   }
 }
