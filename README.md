@@ -1,15 +1,25 @@
-# Realtime Presence Service
+# Realtime Message Service
 
-A production-ready Socket.IO + Redis presence implementation. The server allows multiple Socket.IO instances to share presence information (room membership, connection metadata, state updates) across processes by storing authoritative state in Redis and distributing events through Redis Pub/Sub.
+A production-ready realtime messaging stack built on Socket.IO and Redis. The service provides authoritative presence orchestration, fenced heartbeats, and an event bridge that keeps multiple Socket.IO nodes in sync. A TypeScript web SDK and load-testing harness round out the toolkit so clients can integrate quickly and validate behaviour end-to-end.
 
 ## Features
 
-- Redis-backed presence storage with room/user sets, connection hashes and TTL based expiry
-- Cross-node Socket.IO broadcasting through `@socket.io/redis-adapter`
-- Join/Heartbeat/Leave protocol with optimistic state patching and Redis Pub/Sub fanout
-- Fencing via monotonically increasing epochs so stale heartbeats are ignored
-- Background reaper to cull zombie connections when TTLs expire
-- Configurable via environment variables with safe defaults
+- Redis-backed presence storage with room/user indices, connection hashes, and TTL-based expiry
+- Fencing via monotonically increasing epochs to guard against stale heartbeats or duplicate sockets
+- Pluggable event bridge (`PresenceService#createSocketBridge`) for forwarding Redis fan-out to any Socket.IO server
+- First-class custom event helpers so applications can emit app-specific messages with optional acknowledgements
+- Modular web SDK (`rtm-sdk/`) providing `RealtimeMessageClient`, automatic heartbeats, custom event helpers, and a demo playground
+- Benchmark harness (`benchmark/presence-load-test.mjs`) to simulate large room fleets and stress-test deployments
+
+## Repository Layout
+
+```
+├── src/                  # Node.js Socket.IO + Redis service
+├── rtm-sdk/              # Frontend SDK sources, demo page, and build config
+├── benchmark/            # Load-test script for presence flows
+├── package.json          # Workspace scripts (build, test, sdk demo, benchmark)
+└── README.md             # This guide
+```
 
 ## Getting Started
 
@@ -24,23 +34,25 @@ A production-ready Socket.IO + Redis presence implementation. The server allows 
 npm install
 ```
 
-### Environment variables
+### Environment Variables
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `PORT` | `3000` | HTTP port for the Socket.IO server |
 | `REDIS_URL` | `redis://localhost:6379` | Connection string for Redis |
 | `PRESENCE_TTL_MS` | `30000` | TTL for `prs:conn:<connId>` hashes and heartbeat window |
-| `PRESENCE_REAPER_INTERVAL_MS` | `3000` | How often the reaper scans for zombies |
-| `PRESENCE_REAPER_LOOKBACK_MS` | `2 * PRESENCE_TTL_MS` | Age threshold for considering a connection stale |
+| `PRESENCE_REAPER_INTERVAL_MS` | `3000` | How often the reaper scans for zombie connections |
+| `PRESENCE_REAPER_LOOKBACK_MS` | `2 * PRESENCE_TTL_MS` | Age threshold before a connection is considered stale |
 
-### Running in development
+### Run the Service
+
+Development mode (ts-node):
 
 ```bash
 npm run dev
 ```
 
-### Production build & run
+Production build & run:
 
 ```bash
 npm run build
@@ -53,12 +65,12 @@ npm start
 npm test
 ```
 
-## Library usage
+## Embedding the Service
 
-The `PresenceService` can be embedded in an existing application without the bundled Socket.IO server:
+The `PresenceService` can be embedded inside an existing Node.js application without the bundled Socket.IO HTTP server:
 
 ```ts
-import { PresenceService } from "realtime-mesage"; // or from the local TypeScript sources
+import { PresenceService } from "realtime-mesage"; // or from local sources
 import { Redis } from "ioredis";
 
 const redis = new Redis(process.env.REDIS_URL!);
@@ -68,71 +80,57 @@ const presence = new PresenceService(redis, {
   reaperLookbackMs: 60_000,
 });
 
-// Forward Pub/Sub events to your own transport
-await presence.subscribe((event) => {
-  console.log("presence event", event);
-});
+// Forward Redis pub/sub events into your own Socket.IO instance
+presence
+  .createSocketBridge(io)
+  .catch((error) => console.error("Failed to start bridge", error));
 
 // Clean up on shutdown
 await presence.stop();
 ```
 
-The module also re-exports key builders and type definitions from `src/index.ts` for reuse in external integrations and tests.
+`PresenceService` also exposes helpers to subscribe to Redis events directly, manage epochs, and tear down subscribers cleanly.
 
-## Socket.IO Events
+## Socket.IO Protocol
 
 | Event | Payload | Description |
 | --- | --- | --- |
-| `presence:join` | `{ roomId, userId, state? }` | Registers the connection in Redis and returns a snapshot of the room presence. Ack payload includes `{ self: { connId, epoch } }` for fencing |
-| `presence:heartbeat` | `{ patchState?, epoch? }` | Refreshes TTL/last_seen and optionally patches presence state while carrying the latest epoch |
-| `presence:leave` | `void` | Gracefully leaves the room |
+| `presence:join` | `{ roomId, userId, state? }` | Registers the connection in Redis and returns a snapshot (ack includes `{ self: { connId, epoch } }`) |
+| `presence:heartbeat` | `{ patchState?, epoch? }` | Refreshes TTL/last_seen and optionally patches connection state while carrying the latest epoch |
+| `presence:leave` | `void` | Removes the connection and cleans up Redis indices |
 | `presence:event` | `{ type, roomId, userId, connId, state?, ts, epoch? }` | Broadcast emitted to all sockets in the room when presence changes |
+| _Custom events_ | Any | Applications may emit custom events (e.g. `chat:message`) via the SDK or raw Socket.IO; acknowledgements are optional |
 
-Client libraries should listen for `presence:event` to drive UI updates and periodically call `presence:heartbeat` (10–15s) to keep the connection alive. The `epoch` returned by the `presence:join` ack must be echoed with each heartbeat/update so that the server can drop stale writes from old connections.
+Clients should keep the latest `epoch` returned by `presence:join` and send it with each heartbeat or patch. The server ignores stale writes where the epoch regresses.
 
-```ts
-import { io } from "socket.io-client";
+## Web SDK & Demo
 
-const socket = io("https://your.presence.host", { transports: ["websocket"] });
-let currentEpoch: number | undefined;
+The `rtm-sdk/` package exposes a browser-friendly `RealtimeMessageClient` with:
 
-socket.on("connect", () => {
-  socket.emit(
-    "presence:join",
-    { roomId: "room-1", userId: "u-42", state: { mic: true } },
-    (resp) => {
-      if (resp.ok) {
-        currentEpoch = resp.self.epoch;
-        console.log("snapshot:", resp.snapshot);
-      }
-    }
-  );
+- Automatic heartbeat scheduling and fencing-aware acknowledgements
+- `sendCustomMessage`/`onCustomEvent` helpers that mirror Socket.IO's `emit`/`on`
+- Type-safe presence responses and event payloads
+- A demo playground for manual testing
 
-  setInterval(() => {
-    socket.emit(
-      "presence:heartbeat",
-      { patchState: { typing: Math.random() > 0.5 }, epoch: currentEpoch },
-      (ack) => {
-        if (ack?.ok && ack.epoch !== undefined) {
-          currentEpoch = ack.epoch;
-        }
-      }
-    );
-  }, 10_000);
-});
+Build the SDK and launch the demo:
+
+```bash
+npm run build:sdk
+npm run sdk:demo
 ```
 
-## Project Structure
+Visit <http://localhost:4173> to join a room, send presence heartbeats, and experiment with custom events.
 
+## Load Testing
+
+Simulate 100 rooms × 2 users (or any custom scenario) with the benchmark script:
+
+```bash
+npm run build:sdk   # optional, if you want fresh dist assets
+node benchmark/presence-load-test.mjs
 ```
-src/
-  config.ts                 # Environment handling
-  server.ts                 # Socket.IO HTTP server entrypoint
-  presence/
-    presence-service.ts     # Redis operations + reaper + event bridge
-    redis-keys.ts           # Helper key builders
-    types.ts                # Shared presence contracts
-```
+
+Environment variables such as `TARGET_URL`, `ROOM_COUNT`, and `HEARTBEATS_PER_SEC` control the workload. The script records latency percentiles, error counts, and presence events to help validate scale assumptions.
 
 ## License
 
