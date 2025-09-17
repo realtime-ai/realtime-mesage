@@ -19,6 +19,7 @@ const eventLog = document.getElementById("event-log");
 let client = null;
 let activeChannel = null;
 let unsubscribeHandlers = [];
+let clientHookCleanups = [];
 
 joinForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -48,6 +49,7 @@ joinForm.addEventListener("submit", async (event) => {
 
   try {
     client = new RealtimeMessageClient({ baseUrl });
+    registerClientHooks(client);
     const { channel, response } = await client.joinRoom({
       roomId,
       userId,
@@ -135,7 +137,7 @@ customBtn.addEventListener("click", async () => {
 
   customBtn.disabled = true;
   try {
-    const ack = await client.sendCustomMessage(activeChannel, eventName, payload, {
+    const ack = await client.emit(activeChannel, eventName, payload, {
       ack: true,
     });
     log("event", { customAck: ack, event: eventName, payload });
@@ -152,6 +154,7 @@ leaveBtn.addEventListener("click", async () => {
 });
 
 async function disposeCurrentChannel(shouldShutdownClient = false) {
+  cleanupClientHooks();
   if (unsubscribeHandlers.length > 0) {
     unsubscribeHandlers.forEach((fn) => {
       try {
@@ -247,3 +250,27 @@ function log(level, payload) {
 }
 
 updateControls();
+
+function registerClientHooks(instance) {
+  clientHookCleanups = [
+    instance.onConnect(({ socketId }) => log("info", { connect: socketId })),
+    instance.onDisconnect(({ reason }) => log("warn", { disconnect: reason })),
+    instance.onReconnect(({ attempt, socketId }) => log("info", { reconnect: { attempt, socketId } })),
+    instance.onReconnectAttempt(({ attempt }) => log("info", { reconnectAttempt: attempt })),
+    instance.onMessage((event, payload) => log("event", { remote: { event, payload } })),
+  ];
+}
+
+function cleanupClientHooks() {
+  if (clientHookCleanups.length === 0) {
+    return;
+  }
+  clientHookCleanups.forEach((fn) => {
+    try {
+      fn();
+    } catch (error) {
+      console.error("Failed to remove client hook", error);
+    }
+  });
+  clientHookCleanups = [];
+}

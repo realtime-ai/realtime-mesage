@@ -108,7 +108,7 @@ Clients should keep the latest `epoch` returned by `presence:join` and send it w
 The `rtm-sdk/` package exposes a browser-friendly `RealtimeMessageClient` with:
 
 - Automatic heartbeat scheduling and fencing-aware acknowledgements
-- `sendCustomMessage`/`onCustomEvent` helpers that mirror Socket.IO's `emit`/`on`
+- `emit`/`on` helpers that mirror Socket.IO's API for custom application events
 - Type-safe presence responses and event payloads
 - A demo playground for manual testing
 

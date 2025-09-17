@@ -62,6 +62,8 @@ export interface PresenceClientConfig {
   authProvider?: () => Promise<Record<string, string>> | Record<string, string>;
   /** Custom logger implementation */
   logger?: Logger;
+  /** Lifecycle callbacks for client-wide events */
+  hooks?: ClientHooks;
 }
 
 export interface Logger {
@@ -97,4 +99,20 @@ export interface CustomEmitOptions {
   ack?: boolean;
   /** Timeout in milliseconds when waiting for an acknowledgement. */
   timeoutMs?: number;
+}
+
+export interface ClientHooks {
+  onConnect?: (info: { connId: string; socketId: string }) => void;
+  onDisconnect?: (info: { reason: string; socketId: string }) => void;
+  onReconnect?: (info: { attempt: number; socketId: string }) => void;
+  onReconnectAttempt?: (info: { attempt: number; socketId: string }) => void;
+  onMessage?: (eventName: string, payload: unknown) => void;
+}
+
+export interface ClientEventMap extends Record<string, unknown> {
+  connect: { connId: string; socketId: string };
+  disconnect: { reason: string; socketId: string };
+  reconnect: { attempt: number; socketId: string };
+  reconnectAttempt: { attempt: number; socketId: string };
+  message: { event: string; payload: unknown };
 }

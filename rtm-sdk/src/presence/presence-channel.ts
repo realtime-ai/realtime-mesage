@@ -24,6 +24,15 @@ interface ChannelState {
 
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 10_000;
 const DEFAULT_MAX_MISSED_HEARTBEATS = 2;
+const BUILTIN_CHANNEL_EVENTS = new Set<keyof PresenceChannelEventMap>([
+  "connected",
+  "disconnected",
+  "joinAck",
+  "heartbeatAck",
+  "presenceEvent",
+  "snapshot",
+  "error",
+]);
 
 export class PresenceChannel extends EventEmitter<PresenceChannelEventMap> {
   private readonly transport: SocketPresenceTransport;
@@ -50,7 +59,7 @@ export class PresenceChannel extends EventEmitter<PresenceChannelEventMap> {
   }
 
   async join(params: PresenceJoinParams): Promise<PresenceJoinResponse> {
-    const { socket } = await this.transport.connect({ roomId: params.roomId, userId: params.userId });
+    const socket = await this.transport.connect({ roomId: params.roomId, userId: params.userId });
     this.attachSocket(socket);
 
     return new Promise<PresenceJoinResponse>((resolve, reject) => {
@@ -136,12 +145,12 @@ export class PresenceChannel extends EventEmitter<PresenceChannelEventMap> {
     return this.sendHeartbeat({ patchState: patch });
   }
 
-  sendCustomMessage(eventName: string): void;
-  sendCustomMessage(eventName: string, payload: unknown): void;
-  sendCustomMessage<T>(eventName: string, ack: (response: T) => void): void;
-  sendCustomMessage<T>(eventName: string, payload: unknown, ack: (response: T) => void): void;
-  sendCustomMessage<T>(eventName: string, payload: unknown, options: CustomEmitOptions): Promise<T>;
-  sendCustomMessage<T = unknown>(
+  emit(eventName: string): void;
+  emit(eventName: string, payload: unknown): void;
+  emit<T>(eventName: string, ack: (response: T) => void): void;
+  emit<T>(eventName: string, payload: unknown, ack: (response: T) => void): void;
+  emit<T>(eventName: string, payload: unknown, options: CustomEmitOptions): Promise<T>;
+  emit<T = unknown>(
     eventName: string,
     payloadOrAck?: unknown | ((response: T) => void),
     ackOrOptions?: ((response: T) => void) | CustomEmitOptions
@@ -211,11 +220,23 @@ export class PresenceChannel extends EventEmitter<PresenceChannelEventMap> {
     });
   }
 
-  onCustomEvent<T = unknown>(eventName: string, handler: (payload: T) => void): () => void {
-    const wrapped: CustomHandler = (payload) => {
-      handler(payload as T);
+  on<EventName extends keyof PresenceChannelEventMap>(
+    eventName: EventName,
+    handler: (payload: PresenceChannelEventMap[EventName]) => void
+  ): () => void;
+  on<T = unknown>(eventName: string, handler: (payload: T) => void): () => void;
+  on(eventName: string, handler: (payload: unknown) => void): () => void {
+    if (BUILTIN_CHANNEL_EVENTS.has(eventName as keyof PresenceChannelEventMap)) {
+      return super.on(
+        eventName as keyof PresenceChannelEventMap,
+        handler as (payload: PresenceChannelEventMap[keyof PresenceChannelEventMap]) => void
+      );
+    }
+    const socketHandler: CustomHandler = (payload) => {
+      this.transport.fireMessageHook(eventName, payload);
+      handler(payload);
     };
-    this.registerCustomHandler(eventName, handler as unknown as CustomHandler, wrapped);
+    this.registerCustomHandler(eventName, handler as unknown as CustomHandler, socketHandler);
     return () => this.unregisterCustomHandler(eventName, handler as unknown as CustomHandler);
   }
 
@@ -246,6 +267,7 @@ export class PresenceChannel extends EventEmitter<PresenceChannelEventMap> {
 
     socket.on(this.presenceEventName, (event: PresenceEventEnvelope) => {
       this.emit("presenceEvent", event);
+      this.transport.fireMessageHook(this.presenceEventName, event);
     });
 
     socket.on("disconnect", (reason: string) => {

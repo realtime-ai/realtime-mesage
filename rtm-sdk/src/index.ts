@@ -12,4 +12,6 @@ export type {
   PresenceStatePatch,
   PresenceChannelEventMap,
   CustomEmitOptions,
+  ClientHooks,
+  ClientEventMap,
 } from "./types";

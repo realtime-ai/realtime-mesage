@@ -1,11 +1,6 @@
 import { io, type Socket } from "socket.io-client";
 import type { Logger, PresenceClientConfig } from "../types";
 
-export interface PresenceSocket {
-  socket: Socket;
-  disconnect(): Promise<void>;
-}
-
 export class SocketPresenceTransport {
   private socket: Socket | null = null;
   private readonly config: PresenceClientConfig;
@@ -16,14 +11,14 @@ export class SocketPresenceTransport {
     this.logger = config.logger ?? defaultLogger;
   }
 
-  async connect(additionalQuery?: Record<string, string>): Promise<PresenceSocket> {
+  async connect(additionalQuery?: Record<string, string>): Promise<Socket> {
     if (this.socket?.connected) {
-      return { socket: this.socket, disconnect: () => this.disconnect() };
+      return this.socket;
     }
 
     const authQuery = await resolveAuthQuery(this.config.authProvider);
 
-    return new Promise<PresenceSocket>((resolve, reject) => {
+    return new Promise<Socket>((resolve, reject) => {
       const socket = io(this.config.baseUrl, {
         transports: ["websocket"],
         forceNew: true,
@@ -43,13 +38,9 @@ export class SocketPresenceTransport {
         cleanup();
         this.socket = socket;
         this.logger.debug("Socket connected", { id: socket.id });
-        resolve({
-          socket,
-          disconnect: async () => {
-            cleanup();
-            await this.disconnect();
-          },
-        });
+        const socketId = socket.id ?? "";
+        this.config.hooks?.onConnect?.({ connId: socketId, socketId });
+        resolve(socket);
       };
 
       const onError = (error: unknown) => {
@@ -59,9 +50,27 @@ export class SocketPresenceTransport {
         reject(error instanceof Error ? error : new Error(String(error)));
       };
 
+      const onReconnect = (attempt: number) => {
+        const socketId = socket.id ?? "";
+        this.config.hooks?.onReconnect?.({ attempt, socketId });
+      };
+
+      const onReconnectAttempt = (attempt: number) => {
+        const socketId = socket.id ?? "";
+        this.config.hooks?.onReconnectAttempt?.({ attempt, socketId });
+      };
+
+      const onDisconnect = (reason: string) => {
+        const socketId = socket.id ?? "";
+        this.config.hooks?.onDisconnect?.({ reason, socketId });
+      };
+
       socket.once("connect", onConnect);
       socket.once("connect_error", onError);
       socket.once("error", onError);
+      socket.on("reconnect", onReconnect);
+      socket.on("reconnect_attempt", onReconnectAttempt);
+      socket.on("disconnect", onDisconnect);
     });
   }
 
@@ -81,6 +90,14 @@ export class SocketPresenceTransport {
     } else {
       target.disconnect();
     }
+  }
+
+  getHooks() {
+    return this.config.hooks;
+  }
+
+  fireMessageHook(eventName: string, payload: unknown): void {
+    this.config.hooks?.onMessage?.(eventName, payload);
   }
 }
 

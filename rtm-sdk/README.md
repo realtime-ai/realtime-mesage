@@ -7,8 +7,8 @@ A lightweight, modular JavaScript SDK for interacting with the realtime presence
 - Simple `RealtimeMessageClient` that encapsulates transport setup and reconnect options
 - Room-level `PresenceChannel` with automatic heartbeat scheduling and event emitter semantics
 - TypeScript-first API with reusable types shared with the server contracts
-- Pluggable auth headers and configurable heartbeat cadence
-- Generic custom event helpers to emit app-specific messages or subscribe to server fan-out
+- Pluggable auth headers, configurable heartbeat cadence, and client lifecycle hooks
+- Generic `emit` / `on` helpers for app-specific messages plus Socket.IO-style acknowledgements
 
 ## Installation
 
@@ -59,25 +59,26 @@ channel.on("error", (error) => {
 await client.sendHeartbeat(channel, { typing: true });
 
 // Send a custom application event (with acknowledgement)
-const ack = await client.sendCustomMessage(
-  channel,
-  "chat:message",
-  { text: "Hello world" },
-  { ack: true }
-);
+const ack = await client.emit(channel, "chat:message", { text: "Hello world" }, { ack: true });
 console.log("server ack", ack);
 
 // Listen for custom events broadcast by the server
-const unsubscribe = channel.onCustomEvent("chat:message", (payload) => {
+const unsubscribe = channel.on("chat:message", (payload) => {
   console.log("custom event", payload);
 });
 
-// Note: sendCustomMessage mirrors Socket.IO emit semantics — provide a callback or
-// pass `{ ack: true }` to await an acknowledgement.
+// Hook into client lifecycle events
+const offConnect = client.onConnect(({ socketId }) => console.log("connected", socketId));
+const offDisconnect = client.onDisconnect(({ reason }) => console.log("disconnected", reason));
+const offMessage = client.onMessage((event, payload) => console.log("message", event, payload));
 
 // Later…
 await channel.leave();
 await client.shutdown();
+offConnect();
+offDisconnect();
+offMessage();
+unsubscribe();
 ```
 
 ## Project Layout
