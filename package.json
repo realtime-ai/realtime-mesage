@@ -6,10 +6,12 @@
   "type": "commonjs",
   "scripts": {
     "build": "tsc --project tsconfig.json",
+    "build:sdk": "tsc --project rtm-sdk/tsconfig.json",
     "dev": "ts-node src/server.ts",
     "start": "node dist/server.js",
     "test": "vitest run",
-    "benchmark:presence": "node benchmark/presence-load-test.mjs"
+    "benchmark:presence": "node benchmark/presence-load-test.mjs",
+    "sdk:demo": "node rtm-sdk/demo/server.mjs"
   },
   "keywords": [
     "socket.io",

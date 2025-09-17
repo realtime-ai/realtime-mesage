@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RTM SDK Demo</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Realtime Message SDK Demo</h1>
+      <p>Test the SDK against a running realtime-message server.</p>
+    </header>
+
+    <main>
+      <section class="panel">
+        <h2>Connection</h2>
+        <form id="join-form">
+          <label>
+            Server Base URL
+            <input id="base-url" type="url" value="http://localhost:3000" required />
+          </label>
+          <label>
+            Room ID
+            <input id="room-id" type="text" value="demo-room" required />
+          </label>
+          <label>
+            User ID
+            <input id="user-id" type="text" value="user-1" required />
+          </label>
+          <label>
+            Initial State (JSON)
+            <textarea id="initial-state" rows="3">{ "role": "observer" }</textarea>
+          </label>
+          <button type="submit">Join Room</button>
+        </form>
+
+        <div class="actions">
+          <button id="heartbeat-btn" disabled>Send Heartbeat</button>
+          <button id="patch-btn" disabled>Send State Patch</button>
+          <button id="custom-btn" disabled>Send Custom Event</button>
+          <button id="leave-btn" disabled>Leave Room</button>
+        </div>
+
+        <div class="patch-input" hidden>
+          <label>
+            Patch State (JSON)
+            <textarea id="patch-state" rows="3">{ "typing": true }</textarea>
+          </label>
+        </div>
+
+        <div class="custom-input" hidden>
+          <label>
+            Custom Event Name
+            <input id="custom-event" type="text" value="chat:message" />
+          </label>
+          <label>
+            Custom Payload (JSON)
+            <textarea id="custom-payload" rows="3">{ "text": "Hello from demo" }</textarea>
+          </label>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Events</h2>
+        <div class="event-stream">
+          <pre id="event-log"></pre>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>
+        Build the SDK first with <code>npm run build:sdk</code>, then start this demo via
+        <code>npm run sdk:demo</code>.
+      </p>
+    </footer>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

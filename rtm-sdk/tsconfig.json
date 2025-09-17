@@ -1,0 +1,17 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "module": "esnext",
+    "target": "es2019",
+    "declaration": true,
+    "declarationMap": true,
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "lib": ["dom", "es2020"],
+    "jsx": "preserve"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["dist", "**/*.spec.ts", "**/*.test.ts"]
+}
