@@ -10,13 +10,10 @@ export interface PresenceEventPayload {
   epoch?: number;
 }
 
-<<<<<<< HEAD
 export type PresenceEventHandler = (
   event: PresenceEventPayload
 ) => void | Promise<void>;
 
-=======
->>>>>>> origin/main
 export interface PresenceSnapshotEntry {
   connId: string;
   userId: string;
@@ -35,20 +32,30 @@ export interface JoinOptions {
 export interface HeartbeatOptions {
   connId: string;
   patchState?: Record<string, unknown> | undefined;
-<<<<<<< HEAD
   epoch?: number | undefined;
-=======
->>>>>>> origin/main
 }
 
 export interface LeaveOptions {
   connId: string;
 }
-<<<<<<< HEAD
 
 export interface PresenceConnectionMetadata {
   userId: string;
   epoch: number;
 }
-=======
->>>>>>> origin/main
+
+export interface PresenceSocketRoomEmitter {
+  emit(event: string, payload: PresenceEventPayload): unknown;
+}
+
+export interface PresenceSocketAdapter {
+  to(roomId: string): PresenceSocketRoomEmitter;
+}
+
+export interface PresenceEventBridgeOptions {
+  eventName?: string;
+}
+
+export interface PresenceEventBridge {
+  stop(): Promise<void>;
+}

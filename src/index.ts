@@ -9,5 +9,9 @@ export type {
   LeaveOptions,
   PresenceEventHandler,
   PresenceConnectionMetadata,
+  PresenceSocketAdapter,
+  PresenceEventBridgeOptions,
+  PresenceSocketRoomEmitter,
+  PresenceEventBridge,
 } from "./presence/types";
 export * as presenceKeys from "./presence/redis-keys";

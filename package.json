@@ -7,12 +7,9 @@
   "scripts": {
     "build": "tsc --project tsconfig.json",
     "dev": "ts-node src/server.ts",
-<<<<<<< HEAD
     "start": "node dist/server.js",
-    "test": "vitest run"
-=======
-    "start": "node dist/server.js"
->>>>>>> origin/main
+    "test": "vitest run",
+    "benchmark:presence": "node benchmark/presence-load-test.mjs"
   },
   "keywords": [
     "socket.io",
@@ -30,16 +27,12 @@
     "zod": "^4.1.8"
   },
   "devDependencies": {
-    "@types/node": "^24.5.0",
-<<<<<<< HEAD
     "@types/ioredis-mock": "^8.2.6",
+    "@types/node": "^24.5.0",
     "ioredis-mock": "^8.9.0",
+    "socket.io-client": "^4.8.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
-=======
-    "ts-node": "^10.9.2",
-    "typescript": "^5.9.2"
->>>>>>> origin/main
   }
 }

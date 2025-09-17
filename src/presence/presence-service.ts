@@ -16,6 +16,9 @@ import type {
   PresenceEventHandler,
   PresenceEventPayload,
   PresenceConnectionMetadata,
+  PresenceSocketAdapter,
+  PresenceEventBridgeOptions,
+  PresenceEventBridge,
   PresenceSnapshotEntry,
 } from "./types";
 
@@ -246,6 +249,22 @@ export class PresenceService {
       if (this.eventHandlers.size === 0) {
         await this.teardownSubscriber();
       }
+    };
+  }
+
+  async createSocketBridge(
+    adapter: PresenceSocketAdapter,
+    options?: PresenceEventBridgeOptions
+  ): Promise<PresenceEventBridge> {
+    const eventName = options?.eventName ?? "presence:event";
+    const unsubscribe = await this.subscribe((event) => {
+      adapter.to(event.roomId).emit(eventName, event);
+    });
+
+    return {
+      stop: async () => {
+        await unsubscribe();
+      },
     };
   }
 

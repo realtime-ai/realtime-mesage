@@ -192,6 +192,52 @@ describe("PresenceService", () => {
     await unsubscribe();
   });
 
+  it("bridges presence events to socket-style emitters", async () => {
+    const emitDefault = vi.fn();
+    const socketLike = {
+      to: vi.fn(() => ({ emit: emitDefault })),
+    };
+
+    const bridgeDefault = await service.createSocketBridge(socketLike);
+    await service.join({
+      roomId: "room-socket",
+      userId: "user-socket",
+      connId: "conn-socket",
+      state: {},
+    });
+
+    await waitFor(() => emitDefault.mock.calls.length > 0);
+    expect(socketLike.to).toHaveBeenCalledWith("room-socket");
+    expect(emitDefault).toHaveBeenCalledWith(
+      "presence:event",
+      expect.objectContaining({ roomId: "room-socket", connId: "conn-socket" })
+    );
+    await bridgeDefault.stop();
+
+    const emitCustom = vi.fn();
+    const customSocket = {
+      to: vi.fn(() => ({ emit: emitCustom })),
+    };
+
+    const bridgeCustom = await service.createSocketBridge(customSocket, {
+      eventName: "custom:event",
+    });
+    await service.join({
+      roomId: "room-custom",
+      userId: "user-custom",
+      connId: "conn-custom",
+      state: {},
+    });
+
+    await waitFor(() => emitCustom.mock.calls.length > 0);
+    expect(customSocket.to).toHaveBeenCalledWith("room-custom");
+    expect(emitCustom).toHaveBeenCalledWith(
+      "custom:event",
+      expect.objectContaining({ roomId: "room-custom", connId: "conn-custom" })
+    );
+    await bridgeCustom.stop();
+  });
+
   it("increments the epoch when a connection rejoins", async () => {
     await service.join({
       roomId: "room-epoch",

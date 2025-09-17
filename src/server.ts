@@ -7,7 +7,7 @@ import { z } from "zod";
 import { config } from "./config";
 import { PresenceService } from "./presence/presence-service";
 import { connKey } from "./presence/redis-keys";
-import type { PresenceSnapshotEntry } from "./presence/types";
+import type { PresenceSnapshotEntry, PresenceEventBridge } from "./presence/types";
 
 const httpServer = createServer();
 const io = new Server(httpServer, {
@@ -27,17 +27,15 @@ const presenceService = new PresenceService(commandRedis, {
   reaperLookbackMs: config.reaperLookbackMs,
 });
 
-let unsubscribePresenceEvents: (() => Promise<void>) | null = null;
+let presenceEventBridge: PresenceEventBridge | null = null;
 
 presenceService
-  .subscribe((event) => {
-    io.to(event.roomId).emit("presence:event", event);
-  })
-  .then((unsubscribe) => {
-    unsubscribePresenceEvents = unsubscribe;
+  .createSocketBridge(io)
+  .then((bridge) => {
+    presenceEventBridge = bridge;
   })
   .catch((error) => {
-    console.error("Failed to subscribe to presence events", error);
+    console.error("Failed to start presence event bridge", error);
   });
 presenceService.startReaper();
 
@@ -173,13 +171,13 @@ process.on("SIGTERM", async () => {
 
 async function shutdown() {
   console.log("Shutting down presence server...");
-  if (unsubscribePresenceEvents) {
+  if (presenceEventBridge) {
     try {
-      await unsubscribePresenceEvents();
+      await presenceEventBridge.stop();
     } catch (error) {
-      console.error("Failed to unsubscribe from presence events", error);
+      console.error("Failed to stop presence event bridge", error);
     }
-    unsubscribePresenceEvents = null;
+    presenceEventBridge = null;
   }
   await presenceService.stop();
   await Promise.all([pubClient.quit(), subClient.quit(), commandRedis.quit()]);
