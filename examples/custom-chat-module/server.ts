@@ -3,9 +3,8 @@ import { Server } from "socket.io";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { Redis } from "ioredis";
 
-import { config } from "./config";
-import { RealtimeServer } from "./core/realtime-server";
-import { createPresenceModule } from "./modules/presence";
+import { RealtimeServer, createPresenceModule } from "../../src";
+import { createChatModule } from "./chat-module";
 
 const httpServer = createServer();
 const io = new Server(httpServer, {
@@ -14,9 +13,9 @@ const io = new Server(httpServer, {
   },
 });
 
-const pubClient = new Redis(config.redisUrl);
-const subClient = new Redis(config.redisUrl);
-const redis = new Redis(config.redisUrl);
+const pubClient = new Redis("redis://localhost:6379");
+const subClient = new Redis("redis://localhost:6379");
+const redis = new Redis("redis://localhost:6379");
 
 io.adapter(createAdapter(pubClient, subClient));
 
@@ -24,9 +23,15 @@ const server = new RealtimeServer({ io, redis });
 
 server.use(
   createPresenceModule({
-    ttlMs: config.presenceTtlMs,
-    reaperIntervalMs: config.reaperIntervalMs,
-    reaperLookbackMs: config.reaperLookbackMs,
+    ttlMs: 30_000,
+    reaperIntervalMs: 3_000,
+    reaperLookbackMs: 60_000,
+  })
+);
+
+server.use(
+  createChatModule({
+    maxHistory: 100,
   })
 );
 
@@ -35,9 +40,9 @@ server.start().catch((error) => {
   process.exit(1);
 });
 
-const port = config.port;
+const port = 3000;
 httpServer.listen(port, () => {
-  console.log(`Realtime message server listening on port ${port}`);
+  console.log(`Realtime message server with chat module listening on port ${port}`);
 });
 
 process.on("SIGINT", async () => {

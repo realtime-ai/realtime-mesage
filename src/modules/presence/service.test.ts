@@ -16,8 +16,8 @@ import {
   roomConnectionsKey,
   roomLastSeenKey,
   roomMembersKey,
-} from "./redis-keys";
-import { PresenceService } from "./presence-service";
+} from "./keys";
+import { PresenceService } from "./service";
 
 const redisFactory = () => new (Redis as unknown as { new (): RedisClient })();
 const waitFor = async (

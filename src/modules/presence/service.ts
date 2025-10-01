@@ -9,7 +9,7 @@ import {
   roomLastSeenKey,
   roomMembersKey,
   userConnsKey,
-} from "./redis-keys";
+} from "./keys";
 import type {
   HeartbeatOptions,
   JoinOptions,

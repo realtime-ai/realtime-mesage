@@ -1,24 +1,28 @@
-# Realtime Message Service
+# Realtime Message Infrastructure
 
-A production-ready realtime messaging stack built on Socket.IO and Redis. The service provides authoritative presence orchestration, fenced heartbeats, and an event bridge that keeps multiple Socket.IO nodes in sync. A TypeScript web SDK and load-testing harness round out the toolkit so clients can integrate quickly and validate behaviour end-to-end.
+A modular realtime message infrastructure built on Socket.IO and Redis. Provides core messaging capabilities with built-in presence orchestration, designed for extensibility through pluggable modules.
 
 ## Features
 
-- Redis-backed presence storage with room/user indices, connection hashes, and TTL-based expiry
-- Fencing via monotonically increasing epochs to guard against stale heartbeats or duplicate sockets
-- Pluggable event bridge (`PresenceService#createSocketBridge`) for forwarding Redis fan-out to any Socket.IO server
-- First-class custom event helpers so applications can emit app-specific messages with optional acknowledgements
-- Modular web SDK (`rtm-sdk/`) providing `RealtimeMessageClient`, automatic heartbeats, custom event helpers, and a demo playground
-- Benchmark harness (`benchmark/presence-load-test.mjs`) to simulate large room fleets and stress-test deployments
+- **Modular Architecture**: Pluggable module system for extending functionality
+- **Built-in Presence**: Production-ready presence orchestration with epoch-based fencing and TTL expiry
+- **Direct API Access**: Modules have direct access to Socket.IO and Redis without abstraction layers
+- **Multi-node Support**: Redis adapter keeps multiple Socket.IO nodes in sync
+- **TypeScript SDK**: Browser client (`rtm-sdk/`) with automatic heartbeats and reconnection
+- **Load Testing**: Benchmark harness to validate scale assumptions
 
 ## Repository Layout
 
 ```
-├── src/                  # Node.js Socket.IO + Redis service
-├── rtm-sdk/              # Frontend SDK sources, demo page, and build config
-├── benchmark/            # Load-test script for presence flows
-├── package.json          # Workspace scripts (build, test, sdk demo, benchmark)
-└── README.md             # This guide
+├── src/
+│   ├── core/             # Core framework (RealtimeServer, module system)
+│   ├── modules/presence/ # Built-in presence module
+│   ├── server.ts         # Server entry point
+│   └── config.ts         # Configuration
+├── rtm-sdk/              # Browser SDK
+├── examples/             # Custom module examples
+├── benchmark/            # Load testing
+└── package.json          # Workspace scripts
 ```
 
 ## Getting Started
@@ -65,31 +69,51 @@ npm start
 npm test
 ```
 
-## Embedding the Service
+## Creating Custom Modules
 
-The `PresenceService` can be embedded inside an existing Node.js application without the bundled Socket.IO HTTP server:
+The modular architecture allows you to extend functionality without modifying core code. See `examples/custom-chat-module/` for a complete example.
 
-```ts
-import { PresenceService } from "realtime-mesage"; // or from local sources
-import { Redis } from "ioredis";
+**Basic module structure:**
 
-const redis = new Redis(process.env.REDIS_URL!);
-const presence = new PresenceService(redis, {
-  ttlMs: 30_000,
-  reaperIntervalMs: 3_000,
-  reaperLookbackMs: 60_000,
-});
+```typescript
+import type { RealtimeModule, ModuleContext } from "realtime-mesage";
 
-// Forward Redis pub/sub events into your own Socket.IO instance
-presence
-  .createSocketBridge(io)
-  .catch((error) => console.error("Failed to start bridge", error));
+export function createMyModule(options): RealtimeModule {
+  return {
+    name: "my-module",
 
-// Clean up on shutdown
-await presence.stop();
+    register(context: ModuleContext) {
+      context.io.on("connection", (socket) => {
+        socket.on("my:event", async (payload, ack) => {
+          // Use context.redis for storage
+          await context.redis.set("key", "value");
+
+          // Broadcast to rooms
+          context.io.to(payload.roomId).emit("my:broadcast", data);
+
+          ack?.({ ok: true });
+        });
+      });
+    },
+
+    async onShutdown() {
+      // Cleanup resources
+    },
+  };
+}
 ```
 
-`PresenceService` also exposes helpers to subscribe to Redis events directly, manage epochs, and tear down subscribers cleanly.
+**Register your module:**
+
+```typescript
+import { RealtimeServer, createPresenceModule } from "realtime-mesage";
+import { createMyModule } from "./my-module";
+
+const server = new RealtimeServer({ io, redis });
+server.use(createPresenceModule(options));  // Built-in presence
+server.use(createMyModule(options));         // Your custom module
+await server.start();
+```
 
 ## Socket.IO Protocol
 

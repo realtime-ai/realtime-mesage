@@ -1,17 +1,27 @@
-export { RealtimeMessageClient } from "./client";
-export { PresenceChannel } from "./presence/presence-channel";
+// Core
+export { RealtimeClient } from "./core/realtime-client";
 export type {
-  PresenceClientConfig,
-  PresenceJoinParams,
-  PresenceJoinResponse,
-  PresenceHeartbeatParams,
-  PresenceHeartbeatResponse,
-  PresenceChannelOptions,
+  RealtimeClientConfig,
+  ClientModule,
+  ClientModuleContext,
+  Logger,
+} from "./core/types";
+
+// Presence (built-in to RealtimeClient)
+export { PresenceChannel } from "./modules/presence/presence-channel";
+export type {
   ConnectionStateSnapshot,
   PresenceEventEnvelope,
+  PresenceJoinAck,
+  PresenceJoinError,
+  PresenceHeartbeatAck,
+  PresenceHeartbeatError,
+  PresenceJoinResponse,
+  PresenceHeartbeatResponse,
   PresenceStatePatch,
+  PresenceJoinParams,
+  PresenceHeartbeatParams,
   PresenceChannelEventMap,
-  CustomEmitOptions,
-  ClientHooks,
-  ClientEventMap,
-} from "./types";
+  PresenceChannelOptions,
+} from "./modules/presence/types";
+export type { CustomEmitOptions } from "./modules/presence/presence-channel";

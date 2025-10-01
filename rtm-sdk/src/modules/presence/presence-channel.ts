@@ -1,6 +1,6 @@
 import type { Socket } from "socket.io-client";
+import { EventEmitter } from "../../core/event-emitter";
 import type {
-  CustomEmitOptions,
   PresenceChannelEventMap,
   PresenceChannelOptions,
   PresenceEventEnvelope,
@@ -9,9 +9,12 @@ import type {
   PresenceJoinParams,
   PresenceJoinResponse,
   PresenceStatePatch,
-} from "../types";
-import { EventEmitter } from "../utils/event-emitter";
-import { SocketPresenceTransport } from "../transport/socket-transport";
+} from "./types";
+
+export interface CustomEmitOptions {
+  ack?: boolean;
+  timeoutMs?: number;
+}
 
 type CustomHandler = (payload: unknown) => void;
 
@@ -35,10 +38,9 @@ const BUILTIN_CHANNEL_EVENTS = new Set<keyof PresenceChannelEventMap>([
 ]);
 
 export class PresenceChannel extends EventEmitter<PresenceChannelEventMap> {
-  private readonly transport: SocketPresenceTransport;
+  private readonly socket: Socket;
   private readonly options: PresenceChannelOptions;
   private readonly presenceEventName: string;
-  private activeSocket: Socket | null = null;
   private state: ChannelState | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private heartbeatIntervalMs: number;
@@ -47,9 +49,9 @@ export class PresenceChannel extends EventEmitter<PresenceChannelEventMap> {
   private missedHeartbeats = 0;
   private readonly customHandlers = new Map<string, Map<CustomHandler, CustomHandler>>();
 
-  constructor(transport: SocketPresenceTransport, options?: PresenceChannelOptions) {
+  constructor(socket: Socket, options?: PresenceChannelOptions) {
     super();
-    this.transport = transport;
+    this.socket = socket;
     this.options = options ?? {};
     this.heartbeatIntervalMs = this.options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
     this.heartbeatAckTimeoutMs =
@@ -59,11 +61,10 @@ export class PresenceChannel extends EventEmitter<PresenceChannelEventMap> {
   }
 
   async join(params: PresenceJoinParams): Promise<PresenceJoinResponse> {
-    const socket = await this.transport.connect({ roomId: params.roomId, userId: params.userId });
-    this.attachSocket(socket);
+    this.attachSocketHandlers();
 
     return new Promise<PresenceJoinResponse>((resolve, reject) => {
-      socket.emit("presence:join", params, (response: PresenceJoinResponse) => {
+      this.socket.emit("presence:join", params, (response: PresenceJoinResponse) => {
         this.emit("joinAck", response);
         if (!response?.ok) {
           resolve(response);
@@ -84,7 +85,7 @@ export class PresenceChannel extends EventEmitter<PresenceChannelEventMap> {
         resolve(response);
       });
 
-      socket.once("error", (error: unknown) => {
+      this.socket.once("error", (error: unknown) => {
         reject(error instanceof Error ? error : new Error(String(error)));
       });
     });
@@ -99,7 +100,6 @@ export class PresenceChannel extends EventEmitter<PresenceChannelEventMap> {
       epoch: this.state.epoch,
       patchState: params?.patchState,
     };
-    const socket = this.requireSocket();
 
     return new Promise<PresenceHeartbeatResponse>((resolve) => {
       let settled = false;
@@ -121,7 +121,7 @@ export class PresenceChannel extends EventEmitter<PresenceChannelEventMap> {
         timer.unref();
       }
 
-      socket.emit("presence:heartbeat", payload, (response: PresenceHeartbeatResponse) => {
+      this.socket.emit("presence:heartbeat", payload, (response: PresenceHeartbeatResponse) => {
         if (settled) {
           return;
         }
@@ -155,8 +155,6 @@ export class PresenceChannel extends EventEmitter<PresenceChannelEventMap> {
     payloadOrAck?: unknown | ((response: T) => void),
     ackOrOptions?: ((response: T) => void) | CustomEmitOptions
   ): Promise<T | void> | void {
-    const socket = this.requireSocket();
-
     let payload: unknown | undefined = payloadOrAck;
     let ackCallback: ((response: T) => void) | undefined;
     let options: CustomEmitOptions | undefined;
@@ -172,9 +170,9 @@ export class PresenceChannel extends EventEmitter<PresenceChannelEventMap> {
 
     if (ackCallback) {
       if (payload === undefined) {
-        socket.emit(eventName, ackCallback);
+        this.socket.emit(eventName, ackCallback);
       } else {
-        socket.emit(eventName, payload, ackCallback);
+        this.socket.emit(eventName, payload, ackCallback);
       }
       return;
     }
@@ -182,9 +180,9 @@ export class PresenceChannel extends EventEmitter<PresenceChannelEventMap> {
     const expectsAck = options?.ack ?? false;
     if (!expectsAck) {
       if (payload === undefined) {
-        socket.emit(eventName);
+        this.socket.emit(eventName);
       } else {
-        socket.emit(eventName, payload);
+        this.socket.emit(eventName, payload);
       }
       return;
     }
@@ -213,9 +211,9 @@ export class PresenceChannel extends EventEmitter<PresenceChannelEventMap> {
       };
 
       if (payload === undefined) {
-        socket.emit(eventName, ack);
+        this.socket.emit(eventName, ack);
       } else {
-        socket.emit(eventName, payload, ack);
+        this.socket.emit(eventName, payload, ack);
       }
     });
   }
@@ -233,7 +231,6 @@ export class PresenceChannel extends EventEmitter<PresenceChannelEventMap> {
       );
     }
     const socketHandler: CustomHandler = (payload) => {
-      this.transport.fireMessageHook(eventName, payload);
       handler(payload);
     };
     this.registerCustomHandler(eventName, handler as unknown as CustomHandler, socketHandler);
@@ -241,60 +238,42 @@ export class PresenceChannel extends EventEmitter<PresenceChannelEventMap> {
   }
 
   async leave(): Promise<void> {
-    if (!this.activeSocket) {
-      return;
-    }
     await new Promise<void>((resolve) => {
-      const socket = this.requireSocket();
-      socket.emit("presence:leave", undefined, () => resolve());
+      this.socket.emit("presence:leave", undefined, () => resolve());
     });
     this.cleanupState();
   }
 
   async stop(): Promise<void> {
     await this.leave();
-    this.detachSocket();
-    await this.transport.disconnect();
+    this.detachSocketHandlers();
   }
 
-  private attachSocket(socket: Socket): void {
-    if (this.activeSocket?.id === socket.id) {
-      return;
-    }
-
-    this.detachSocket();
-    this.activeSocket = socket;
-
-    socket.on(this.presenceEventName, (event: PresenceEventEnvelope) => {
+  private attachSocketHandlers(): void {
+    this.socket.on(this.presenceEventName, (event: PresenceEventEnvelope) => {
       this.emit("presenceEvent", event);
-      this.transport.fireMessageHook(this.presenceEventName, event);
     });
 
-    socket.on("disconnect", (reason: string) => {
+    this.socket.on("disconnect", (reason: string) => {
       this.emit("disconnected", { reason });
       this.cleanupState();
     });
 
     this.customHandlers.forEach((handlerMap, eventName) => {
       handlerMap.forEach((wrapper) => {
-        socket.on(eventName, wrapper);
+        this.socket.on(eventName, wrapper);
       });
     });
   }
 
-  private detachSocket(): void {
-    const socket = this.activeSocket;
-    if (!socket) {
-      return;
-    }
-    socket.off(this.presenceEventName);
-    socket.off("disconnect");
+  private detachSocketHandlers(): void {
+    this.socket.off(this.presenceEventName);
+    this.socket.off("disconnect");
     this.customHandlers.forEach((handlerMap, eventName) => {
       handlerMap.forEach((wrapper) => {
-        socket.off(eventName, wrapper);
+        this.socket.off(eventName, wrapper);
       });
     });
-    this.activeSocket = null;
   }
 
   private startHeartbeatLoop(): void {
@@ -322,7 +301,6 @@ export class PresenceChannel extends EventEmitter<PresenceChannelEventMap> {
   private cleanupState(): void {
     this.stopHeartbeatLoop();
     this.state = null;
-    this.detachSocket();
   }
 
   private resetMissedHeartbeats(): void {
@@ -343,15 +321,12 @@ export class PresenceChannel extends EventEmitter<PresenceChannelEventMap> {
       handlerMap = new Map();
       this.customHandlers.set(eventName, handlerMap);
     }
-    const socket = this.activeSocket;
     const existing = handlerMap.get(handler);
-    if (existing && socket) {
-      socket.off(eventName, existing);
+    if (existing) {
+      this.socket.off(eventName, existing);
     }
     handlerMap.set(handler, wrapper);
-    if (socket) {
-      socket.on(eventName, wrapper);
-    }
+    this.socket.on(eventName, wrapper);
   }
 
   private unregisterCustomHandler(eventName: string, handler: CustomHandler): void {
@@ -360,20 +335,12 @@ export class PresenceChannel extends EventEmitter<PresenceChannelEventMap> {
       return;
     }
     const wrapper = handlerMap.get(handler);
-    const socket = this.activeSocket;
-    if (wrapper && socket) {
-      socket.off(eventName, wrapper);
+    if (wrapper) {
+      this.socket.off(eventName, wrapper);
     }
     handlerMap.delete(handler);
     if (handlerMap.size === 0) {
       this.customHandlers.delete(eventName);
     }
-  }
-
-  private requireSocket(): Socket {
-    if (!this.activeSocket) {
-      throw new Error("Socket is not connected");
-    }
-    return this.activeSocket;
   }
 }

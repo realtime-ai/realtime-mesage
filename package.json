@@ -10,7 +10,15 @@
     "dev": "ts-node src/server.ts",
     "start": "node dist/server.js",
     "test": "vitest run",
+    "test:unit": "vitest run --exclude '**/e2e/**'",
+    "test:integration": "vitest run src/modules/presence/integration.test.ts src/core/realtime-server.test.ts",
+    "test:e2e": "vitest run src/e2e",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "benchmark:presence": "node benchmark/presence-load-test.mjs",
+    "benchmark:sdk": "node benchmark/sdk-presence-load-test.mjs",
+    "benchmark:validate": "node benchmark/benchmark-validator.mjs",
+    "benchmark:ci": "ROOM_COUNT=10 USERS_PER_ROOM=5 TEST_DURATION_MS=30000 node benchmark/benchmark-validator.mjs benchmark/presence-load-test.mjs",
     "sdk:demo": "node rtm-sdk/demo/server.mjs"
   },
   "keywords": [
