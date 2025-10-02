@@ -1,0 +1,76 @@
+name: Publish Server Package
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Triggers on version tags like v1.0.0
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@${{ github.repository_owner }}'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test:unit
+
+      - name: Build server
+        run: npm run build
+
+      - name: Configure package for GitHub Packages
+        run: |
+          # Extract owner and repo from GITHUB_REPOSITORY
+          OWNER=$(echo $GITHUB_REPOSITORY | cut -d'/' -f1)
+          REPO=$(echo $GITHUB_REPOSITORY | cut -d'/' -f2)
+
+          # Update package name to be scoped
+          node -e "
+            const pkg = require('./package.json');
+            pkg.name = '@${OWNER}/${REPO}';
+            pkg.publishConfig = {
+              registry: 'https://npm.pkg.github.com'
+            };
+            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2));
+          "
+
+          cat package.json
+
+      - name: Publish to GitHub Packages
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Server Release ${{ github.ref_name }}
+          body: |
+            ## Server Package Release ${{ github.ref_name }}
+
+            ### Installation
+            ```bash
+            npm install @${{ github.repository }}@${{ github.ref_name }}
+            ```
+
+            ### What's Changed
+            See commit history for details.
+          draft: false
+          prerelease: false

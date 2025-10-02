@@ -2,8 +2,18 @@
   "name": "realtime-mesage",
   "version": "1.0.0",
   "description": "Realtime presence service built with Socket.IO and Redis",
-  "main": "dist/server.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "type": "commonjs",
+  "files": [
+    "dist",
+    "README.md",
+    "CLAUDE.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YOUR_USERNAME/realtime-mesage.git"
+  },
   "scripts": {
     "build": "tsc --project tsconfig.json",
     "build:sdk": "tsc --project rtm-sdk/tsconfig.json",

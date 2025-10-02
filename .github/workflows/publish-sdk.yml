@@ -1,0 +1,125 @@
+name: Publish SDK Package
+
+on:
+  push:
+    tags:
+      - 'sdk-v*.*.*'  # Triggers on SDK version tags like sdk-v1.0.0
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@${{ github.repository_owner }}'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Run SDK tests
+        run: npm run test:unit -- rtm-sdk/
+
+      - name: Build SDK
+        run: npm run build:sdk
+
+      - name: Create SDK package.json
+        run: |
+          # Extract owner and repo from GITHUB_REPOSITORY
+          OWNER=$(echo $GITHUB_REPOSITORY | cut -d'/' -f1)
+          REPO=$(echo $GITHUB_REPOSITORY | cut -d'/' -f2)
+
+          # Extract version from tag (sdk-v1.2.3 -> 1.2.3)
+          VERSION=${GITHUB_REF_NAME#sdk-v}
+
+          # Create package.json for SDK
+          cat > rtm-sdk/package.json << EOF
+          {
+            "name": "@${OWNER}/${REPO}-sdk",
+            "version": "${VERSION}",
+            "description": "Browser SDK for realtime message infrastructure",
+            "main": "dist/index.js",
+            "types": "dist/index.d.ts",
+            "type": "commonjs",
+            "files": [
+              "dist",
+              "README.md"
+            ],
+            "publishConfig": {
+              "registry": "https://npm.pkg.github.com"
+            },
+            "keywords": [
+              "socket.io",
+              "realtime",
+              "presence",
+              "websocket",
+              "client"
+            ],
+            "author": "",
+            "license": "MIT",
+            "repository": {
+              "type": "git",
+              "url": "git+https://github.com/${GITHUB_REPOSITORY}.git",
+              "directory": "rtm-sdk"
+            },
+            "dependencies": {
+              "socket.io-client": "^4.8.1"
+            },
+            "peerDependencies": {
+              "socket.io-client": "^4.8.1"
+            }
+          }
+          EOF
+
+          cat rtm-sdk/package.json
+
+      - name: Publish SDK to GitHub Packages
+        working-directory: ./rtm-sdk
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: SDK Release ${{ github.ref_name }}
+          body: |
+            ## SDK Package Release ${{ github.ref_name }}
+
+            ### Installation
+            ```bash
+            npm install @${{ github.repository }}-sdk@${GITHUB_REF_NAME#sdk-v}
+            ```
+
+            ### Usage
+            ```typescript
+            import { RealtimeClient } from '@${{ github.repository }}-sdk';
+
+            const client = new RealtimeClient({
+              baseUrl: 'http://localhost:3000'
+            });
+
+            await client.connect();
+            const { channel } = await client.joinRoom({
+              roomId: 'my-room',
+              userId: 'user-1',
+              state: { mic: true }
+            });
+            ```
+
+            ### What's Changed
+            See commit history for details.
+          draft: false
+          prerelease: false
