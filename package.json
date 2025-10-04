@@ -25,7 +25,6 @@
     "test:e2e": "REDIS_RUNNING=1 vitest run src/e2e",
     "test:all": "npm run test:server && npm run test:sdk && npm run test:e2e",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
     "prepare": "husky",
     "benchmark:presence": "node benchmark/presence-load-test.mjs",
     "benchmark:sdk": "node benchmark/sdk-presence-load-test.mjs",

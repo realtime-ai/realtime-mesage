@@ -57,13 +57,3 @@ jobs:
         env:
           REDIS_URL: redis://localhost:6379
         continue-on-error: false
-
-      - name: Generate coverage report
-        run: npm run test:coverage
-
-      - name: Upload coverage to artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage/
-          retention-days: 30
