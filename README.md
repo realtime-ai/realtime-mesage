@@ -69,51 +69,11 @@ npm start
 npm test
 ```
 
-## Creating Custom Modules
+## Extending with Custom Modules
 
-The modular architecture allows you to extend functionality without modifying core code. See `examples/custom-chat-module/` for a complete example.
+The modular architecture allows you to add custom features (chat, notifications, analytics, etc.) without modifying core code.
 
-**Basic module structure:**
-
-```typescript
-import type { RealtimeModule, ModuleContext } from "realtime-mesage";
-
-export function createMyModule(options): RealtimeModule {
-  return {
-    name: "my-module",
-
-    register(context: ModuleContext) {
-      context.io.on("connection", (socket) => {
-        socket.on("my:event", async (payload, ack) => {
-          // Use context.redis for storage
-          await context.redis.set("key", "value");
-
-          // Broadcast to rooms
-          context.io.to(payload.roomId).emit("my:broadcast", data);
-
-          ack?.({ ok: true });
-        });
-      });
-    },
-
-    async onShutdown() {
-      // Cleanup resources
-    },
-  };
-}
-```
-
-**Register your module:**
-
-```typescript
-import { RealtimeServer, createPresenceModule } from "realtime-mesage";
-import { createMyModule } from "./my-module";
-
-const server = new RealtimeServer({ io, redis });
-server.use(createPresenceModule(options));  // Built-in presence
-server.use(createMyModule(options));         // Your custom module
-await server.start();
-```
+See `examples/custom-chat-module/` for a complete working example, or refer to [CLAUDE.md](./CLAUDE.md#creating-custom-modules) for detailed module development guide.
 
 ## Socket.IO Protocol
 

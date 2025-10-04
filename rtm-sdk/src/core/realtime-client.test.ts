@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import { RealtimeClient } from "./realtime-client";
 import type { ClientModule, RealtimeClientConfig } from "./types";
 import { createServer } from "http";
@@ -11,30 +11,62 @@ describe("RealtimeClient", () => {
   let port: number;
   let client: RealtimeClient;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     httpServer = createServer();
     io = new SocketIOServer(httpServer);
 
-    await new Promise<void>((resolve) => {
-      httpServer.listen(0, () => {
-        port = (httpServer.address() as AddressInfo).port;
+    await new Promise<void>((resolve, reject) => {
+      httpServer.listen(0, (err: Error | undefined) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        const addr = httpServer.address();
+        if (!addr || typeof addr === 'string') {
+          reject(new Error('Failed to get server address'));
+          return;
+        }
+        port = (addr as AddressInfo).port;
         resolve();
       });
     });
   });
 
   afterEach(async () => {
-    await client?.shutdown();
-    await new Promise<void>((resolve, reject) => {
-      io.close((err) => {
-        if (err) reject(err);
-        else resolve();
-      });
+    if (client) {
+      try {
+        await Promise.race([
+          client.shutdown(),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Shutdown timeout')), 5000)
+          )
+        ]);
+      } catch (error) {
+        // Force cleanup on timeout
+        const socket = client.getSocket();
+        if (socket) {
+          socket.removeAllListeners();
+          socket.disconnect();
+        }
+      }
+      client = null as any;
+    }
+  });
+
+  afterAll(async () => {
+    if (!io || !httpServer) {
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      io.close(() => resolve());
     });
-    await new Promise<void>((resolve, reject) => {
+    await new Promise<void>((resolve) => {
       httpServer.close((err: any) => {
-        if (err) reject(err);
-        else resolve();
+        // Ignore ERR_SERVER_NOT_RUNNING as io.close() may have already closed it
+        if (err && err.code !== 'ERR_SERVER_NOT_RUNNING') {
+          console.error("httpServer.close error:", err);
+        }
+        resolve();
       });
     });
   });
@@ -330,7 +362,8 @@ describe("RealtimeClient", () => {
       client = new RealtimeClient(config);
       await client.connect();
 
-      expect(receivedQuery).toEqual({});
+      // Socket.IO always adds EIO and transport, just verify no custom auth fields
+      expect(Object.keys(receivedQuery).filter(k => k !== 'EIO' && k !== 'transport')).toEqual([]);
     });
   });
 
@@ -384,7 +417,10 @@ describe("RealtimeClient", () => {
 
       io.on("connection", (socket) => {
         socket.on("presence:join", (payload, ack) => {
-          ack({ ok: true, self: { epoch: 1 }, snapshot: [] });
+          ack({ ok: true, self: { connId: 'test-conn', epoch: 1 }, snapshot: [] });
+        });
+        socket.on("presence:leave", (payload, ack) => {
+          ack?.();
         });
       });
 

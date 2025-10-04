@@ -238,8 +238,17 @@ export class PresenceChannel extends EventEmitter<PresenceChannelEventMap> {
   }
 
   async leave(): Promise<void> {
+    if (!this.state) {
+      // Not joined, nothing to leave
+      return;
+    }
+
     await new Promise<void>((resolve) => {
-      this.socket.emit("presence:leave", undefined, () => resolve());
+      const timeout = setTimeout(() => resolve(), 1000); // Timeout after 1s
+      this.socket.emit("presence:leave", undefined, () => {
+        clearTimeout(timeout);
+        resolve();
+      });
     });
     this.cleanupState();
   }

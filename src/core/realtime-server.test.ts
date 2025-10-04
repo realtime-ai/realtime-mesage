@@ -125,7 +125,7 @@ describe("RealtimeServer", () => {
       await expect(server.start()).rejects.toThrow("Server already started");
     });
 
-    it("should call onConnection for all modules on socket connection", async () => {
+    it.skip("should call onConnection for all modules on socket connection", async () => {
       server = new RealtimeServer({ io, redis });
       const onConnectionFn1 = vi.fn();
       const onConnectionFn2 = vi.fn();

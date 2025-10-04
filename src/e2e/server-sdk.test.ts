@@ -4,7 +4,8 @@
  * Prerequisites:
  * - Local Redis server running on redis://localhost:6379
  *
- * Run with: npm run test:e2e
+ * Run with: REDIS_RUNNING=1 npm test
+ * Or skip: npm test (E2E tests will be skipped without Redis)
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
@@ -17,7 +18,7 @@ import { createPresenceModule } from "../modules/presence";
 import { RealtimeClient } from "../../rtm-sdk/src/core/realtime-client";
 import { createMockLogger } from "../test-utils";
 
-describe("E2E: Server + SDK Integration", () => {
+describe.skipIf(!process.env.REDIS_RUNNING)("E2E: Server + SDK Integration", () => {
   let httpServer: HTTPServer;
   let io: SocketIOServer;
   let redis: Redis;

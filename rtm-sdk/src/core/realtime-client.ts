@@ -114,9 +114,18 @@ export class RealtimeClient {
 
     if (socket.connected) {
       await new Promise<void>((resolve) => {
-        socket.once("disconnect", () => resolve());
+        const timeout = setTimeout(() => {
+          socket.off("disconnect", onDisconnect);
+          resolve();
+        }, 500);
+
+        const onDisconnect = () => {
+          clearTimeout(timeout);
+          resolve();
+        };
+
+        socket.once("disconnect", onDisconnect);
         socket.disconnect();
-        setTimeout(() => resolve(), 500);
       });
       this.logger.info("Socket disconnected");
     } else {
