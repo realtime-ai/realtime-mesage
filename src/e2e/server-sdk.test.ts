@@ -83,8 +83,14 @@ describe.skipIf(!process.env.REDIS_RUNNING)("E2E: Server + SDK Integration", () 
     await new Promise<void>((resolve, reject) => {
       io.close((err) => (err ? reject(err) : resolve()));
     });
-    await new Promise<void>((resolve, reject) => {
-      httpServer.close((err) => (err ? reject(err) : resolve()));
+    await new Promise<void>((resolve) => {
+      httpServer.close((err: any) => {
+        // Ignore ERR_SERVER_NOT_RUNNING error
+        if (err && err.code !== 'ERR_SERVER_NOT_RUNNING') {
+          console.error("httpServer.close error:", err);
+        }
+        resolve();
+      });
     });
     await redis.quit();
   });
