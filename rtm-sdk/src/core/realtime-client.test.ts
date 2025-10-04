@@ -11,6 +11,14 @@ describe("RealtimeClient", () => {
   let port: number;
   let client: RealtimeClient;
 
+  // Silent logger to suppress test output
+  const silentLogger = {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  };
+
   beforeAll(async () => {
     httpServer = createServer();
     io = new SocketIOServer(httpServer);
@@ -75,6 +83,7 @@ describe("RealtimeClient", () => {
     it("should connect to server successfully", async () => {
       const config: RealtimeClientConfig = {
         baseUrl: `http://localhost:${port}`,
+        logger: silentLogger,
       };
 
       client = new RealtimeClient(config);
@@ -88,6 +97,7 @@ describe("RealtimeClient", () => {
       const config: RealtimeClientConfig = {
         baseUrl: "http://localhost:99999",
         reconnection: false,
+        logger: silentLogger,
       };
 
       client = new RealtimeClient(config);
@@ -119,6 +129,7 @@ describe("RealtimeClient", () => {
     it("should disconnect cleanly", async () => {
       const config: RealtimeClientConfig = {
         baseUrl: `http://localhost:${port}`,
+        logger: silentLogger,
       };
 
       client = new RealtimeClient(config);
@@ -132,6 +143,7 @@ describe("RealtimeClient", () => {
     it("should handle disconnect when not connected", async () => {
       const config: RealtimeClientConfig = {
         baseUrl: `http://localhost:${port}`,
+        logger: silentLogger,
       };
 
       client = new RealtimeClient(config);
@@ -145,6 +157,7 @@ describe("RealtimeClient", () => {
     it("should register modules before connection", () => {
       const config: RealtimeClientConfig = {
         baseUrl: `http://localhost:${port}`,
+        logger: silentLogger,
       };
 
       client = new RealtimeClient(config);
@@ -160,6 +173,7 @@ describe("RealtimeClient", () => {
     it("should throw error when registering after connection", async () => {
       const config: RealtimeClientConfig = {
         baseUrl: `http://localhost:${port}`,
+        logger: silentLogger,
       };
 
       client = new RealtimeClient(config);
@@ -185,6 +199,7 @@ describe("RealtimeClient", () => {
 
       const config: RealtimeClientConfig = {
         baseUrl: `http://localhost:${port}`,
+        logger: silentLogger,
       };
 
       client = new RealtimeClient(config);
@@ -211,6 +226,7 @@ describe("RealtimeClient", () => {
 
       const config: RealtimeClientConfig = {
         baseUrl: `http://localhost:${port}`,
+        logger: silentLogger,
       };
 
       client = new RealtimeClient(config);
@@ -231,6 +247,7 @@ describe("RealtimeClient", () => {
 
       const config: RealtimeClientConfig = {
         baseUrl: `http://localhost:${port}`,
+        logger: silentLogger,
       };
 
       client = new RealtimeClient(config);
@@ -251,6 +268,7 @@ describe("RealtimeClient", () => {
 
       const config: RealtimeClientConfig = {
         baseUrl: `http://localhost:${port}`,
+        logger: silentLogger,
       };
 
       client = new RealtimeClient(config);
@@ -371,6 +389,7 @@ describe("RealtimeClient", () => {
     it("should throw error when creating channel before connection", () => {
       const config: RealtimeClientConfig = {
         baseUrl: `http://localhost:${port}`,
+        logger: silentLogger,
       };
 
       client = new RealtimeClient(config);
@@ -383,6 +402,7 @@ describe("RealtimeClient", () => {
     it("should create presence channel after connection", async () => {
       const config: RealtimeClientConfig = {
         baseUrl: `http://localhost:${port}`,
+        logger: silentLogger,
       };
 
       client = new RealtimeClient(config);
@@ -462,6 +482,7 @@ describe("RealtimeClient", () => {
       const config: RealtimeClientConfig = {
         baseUrl: `http://localhost:${port}`,
         reconnection: false,
+        logger: silentLogger,
       };
 
       client = new RealtimeClient(config);
@@ -496,14 +517,26 @@ describe("RealtimeClient", () => {
     });
 
     it("should use default logger when not provided", async () => {
+      const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
       const config: RealtimeClientConfig = {
         baseUrl: `http://localhost:${port}`,
+        // Intentionally not providing logger to test default behavior
       };
 
       client = new RealtimeClient(config);
       await client.connect();
 
       expect(client.isConnected()).toBe(true);
+      // Default logger only logs warn and error to console, not info/debug
+
+      // Disconnect to trigger a warning
+      await client.disconnect();
+      expect(consoleWarnSpy).toHaveBeenCalled();
+
+      consoleWarnSpy.mockRestore();
+      consoleErrorSpy.mockRestore();
     });
   });
 });
