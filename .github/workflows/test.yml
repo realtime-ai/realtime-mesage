@@ -10,6 +10,10 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        node-version: [18, 20]
+
     services:
       redis:
         image: redis:7-alpine
@@ -25,25 +29,34 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ matrix.node-version }}
           cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run unit tests
-        run: npm run test:unit
+      - name: Build TypeScript - Server
+        run: npm run build
 
-      - name: Run integration tests
-        run: npm run test:integration
+      - name: Build TypeScript - SDK
+        run: npm run build:sdk
 
-      - name: Run E2E tests
-        run: npm run test:e2e
+      - name: Test - Server (Unit & Integration)
+        run: npm run test:server
+        continue-on-error: false
+
+      - name: Test - SDK Client
+        run: npm run test:sdk
+        continue-on-error: false
+
+      - name: Test - End-to-End (with Redis)
+        run: REDIS_RUNNING=1 npm run test:e2e
         env:
           REDIS_URL: redis://localhost:6379
+        continue-on-error: false
 
       - name: Generate coverage report
         run: npm run test:coverage
