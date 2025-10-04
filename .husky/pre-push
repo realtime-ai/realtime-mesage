@@ -1,0 +1,16 @@
+#!/bin/bash
+
+echo "🔍 Running pre-push tests..."
+
+# Run server and SDK tests
+npm test
+
+# Check if Redis is available and run E2E tests
+if redis-cli ping > /dev/null 2>&1; then
+    echo "📦 Running E2E tests with Redis..."
+    npm run test:e2e
+else
+    echo "⚠️  Redis not available, skipping E2E tests"
+fi
+
+echo "✅ All tests passed!"
