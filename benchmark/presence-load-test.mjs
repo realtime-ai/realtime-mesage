@@ -21,6 +21,40 @@ const ACK_TIMEOUT_MS = parseInt(process.env.ACK_TIMEOUT_MS ?? "2000", 10);
 const TOTAL_CLIENTS = ROOM_COUNT * USERS_PER_ROOM;
 const HEARTBEAT_INTERVAL_MS = Math.max(1, Math.round(1000 / HEARTBEATS_PER_SEC));
 
+class StatsCollector {
+  constructor() {
+    this.values = [];
+  }
+
+  record(value) {
+    this.values.push(value);
+  }
+
+  summary() {
+    if (this.values.length === 0) {
+      return null;
+    }
+    const sorted = [...this.values].sort((a, b) => a - b);
+    const count = sorted.length;
+    const sum = sorted.reduce((acc, val) => acc + val, 0);
+    const percentile = (p) => {
+      if (count === 0) return 0;
+      const rank = Math.min(count - 1, Math.max(0, Math.round((p / 100) * (count - 1))));
+      return sorted[rank];
+    };
+    return {
+      count,
+      min: sorted[0],
+      p50: percentile(50),
+      p90: percentile(90),
+      p95: percentile(95),
+      p99: percentile(99),
+      max: sorted[count - 1],
+      avg: sum / count,
+    };
+  }
+}
+
 const metrics = createMetrics();
 let globalStop = false;
 const startTime = Date.now();
@@ -88,40 +122,6 @@ function createMetrics() {
       );
     },
   };
-}
-
-class StatsCollector {
-  constructor() {
-    this.values = [];
-  }
-
-  record(value) {
-    this.values.push(value);
-  }
-
-  summary() {
-    if (this.values.length === 0) {
-      return null;
-    }
-    const sorted = [...this.values].sort((a, b) => a - b);
-    const count = sorted.length;
-    const sum = sorted.reduce((acc, val) => acc + val, 0);
-    const percentile = (p) => {
-      if (count === 0) return 0;
-      const rank = Math.min(count - 1, Math.max(0, Math.round((p / 100) * (count - 1))));
-      return sorted[rank];
-    };
-    return {
-      count,
-      min: sorted[0],
-      p50: percentile(50),
-      p90: percentile(90),
-      p95: percentile(95),
-      p99: percentile(99),
-      max: sorted[count - 1],
-      avg: sum / count,
-    };
-  }
 }
 
 async function runClient(clientIndex) {
