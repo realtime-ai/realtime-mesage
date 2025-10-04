@@ -5,6 +5,7 @@ import { io as ioClient, Socket as ClientSocket } from "socket.io-client";
 import type { Server, Socket } from "socket.io";
 import { createServer } from "http";
 import type { AddressInfo } from "net";
+import { vi } from "vitest";
 
 /**
  * Create a mock Redis client for testing
