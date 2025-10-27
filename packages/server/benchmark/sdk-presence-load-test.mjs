@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 // Import SDK from built dist
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const sdkPath = join(__dirname, "../rtm-sdk/dist/index.js");
+const sdkPath = join(__dirname, "../../sdk/dist/index.js");
 
 const { RealtimeClient } = await import(sdkPath);
 

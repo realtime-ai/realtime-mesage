@@ -1,60 +1,53 @@
 {
-  "name": "realtime-mesage",
+  "name": "realtime-mesage-monorepo",
   "version": "1.0.0",
-  "description": "Realtime presence service built with Socket.IO and Redis",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "type": "commonjs",
-  "files": [
-    "dist",
-    "README.md",
-    "CLAUDE.md"
+  "private": true,
+  "description": "Realtime messaging infrastructure with modular SDK",
+  "workspaces": [
+    "packages/*"
   ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/YOUR_USERNAME/realtime-mesage.git"
-  },
   "scripts": {
-    "build": "tsc --project tsconfig.json",
-    "build:sdk": "tsc --project rtm-sdk/tsconfig.json",
-    "dev": "ts-node src/server.ts",
-    "start": "node dist/server.js",
-    "test": "npm run test:server && npm run test:sdk",
-    "test:server": "vitest run src",
-    "test:sdk": "vitest run rtm-sdk",
-    "test:e2e": "REDIS_RUNNING=1 vitest run src/e2e",
-    "test:all": "npm run test:server && npm run test:sdk && npm run test:e2e",
-    "test:watch": "vitest",
-    "prepare": "husky",
-    "benchmark:presence": "node benchmark/presence-load-test.mjs",
-    "benchmark:sdk": "node benchmark/sdk-presence-load-test.mjs",
-    "benchmark:validate": "node benchmark/benchmark-validator.mjs",
-    "benchmark:ci": "ROOM_COUNT=10 USERS_PER_ROOM=5 TEST_DURATION_MS=30000 node benchmark/benchmark-validator.mjs benchmark/presence-load-test.mjs",
-    "sdk:demo": "node rtm-sdk/demo/server.mjs"
-  },
-  "keywords": [
-    "socket.io",
-    "redis",
-    "presence"
-  ],
-  "author": "",
-  "license": "MIT",
-  "dependencies": {
-    "@socket.io/redis-adapter": "^8.3.0",
-    "dotenv": "^17.2.2",
-    "ioredis": "^5.7.0",
-    "socket.io": "^4.8.1",
-    "uuid": "^13.0.0",
-    "zod": "^4.1.8"
+    "build": "pnpm -r build",
+    "build:server": "pnpm --filter server build",
+    "build:sdk": "pnpm --filter sdk build",
+
+    "dev": "pnpm --filter server dev",
+    "dev:sdk": "pnpm --filter sdk dev",
+    "start": "pnpm --filter server start",
+
+    "test": "pnpm -r test",
+    "test:server": "pnpm --filter server test",
+    "test:sdk": "pnpm --filter sdk test",
+    "test:e2e": "pnpm --filter server test:e2e",
+    "test:all": "pnpm test && pnpm test:e2e",
+    "test:watch": "pnpm -r test:watch",
+
+    "benchmark:presence": "pnpm --filter server benchmark:presence",
+    "benchmark:sdk": "pnpm --filter server benchmark:sdk",
+    "benchmark:validate": "pnpm --filter server benchmark:validate",
+    "benchmark:ci": "pnpm --filter server benchmark:ci",
+
+    "sdk:demo": "pnpm --filter sdk demo",
+
+    "clean": "pnpm -r clean && rm -rf node_modules",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "format": "prettier --write \"packages/**/src/**/*.ts\"",
+
+    "publish:sdk": "pnpm --filter sdk publish --access public",
+
+    "prepare": "husky"
   },
   "devDependencies": {
-    "@types/ioredis-mock": "^8.2.6",
     "@types/node": "^24.5.0",
     "husky": "^9.1.7",
-    "ioredis-mock": "^8.9.0",
-    "socket.io-client": "^4.8.1",
-    "ts-node": "^10.9.2",
+    "prettier": "^3.3.0",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
-  }
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.15.0"
 }

@@ -1,0 +1,32 @@
+# Source files
+src/
+rtm-sdk/
+benchmark/
+examples/
+
+# Config files
+tsconfig.json
+vitest.config.ts
+.github/
+.gitignore
+
+# Test files
+**/*.test.ts
+**/*.spec.ts
+src/test-utils/
+src/e2e/
+
+# Development
+node_modules/
+.env
+.env.*
+*.log
+
+# Build artifacts
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

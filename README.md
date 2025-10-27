@@ -176,7 +176,7 @@ This infrastructure is ideal for building:
 ### Installation
 
 ```bash
-npm install
+pnpm install
 ```
 
 ### Development Commands
@@ -364,6 +364,14 @@ await client.disconnect();
 ```
 
 ### Interactive Demo
+
+Run all tests:
+
+```bash
+pnpm test
+```
+
+Run specific package tests:
 
 ```bash
 npm run sdk:demo    # Opens http://localhost:4173
