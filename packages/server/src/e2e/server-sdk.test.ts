@@ -15,7 +15,7 @@ import type { AddressInfo } from "net";
 import Redis from "ioredis";
 import { RealtimeServer } from "../core/realtime-server";
 import { createPresenceModule } from "../modules/presence";
-import { RealtimeClient } from "../../rtm-sdk/src/core/realtime-client";
+import { RealtimeClient } from "@realtime-mesage/sdk";
 import { createMockLogger } from "../test-utils";
 
 describe.skipIf(!process.env.REDIS_RUNNING)("E2E: Server + SDK Integration", () => {

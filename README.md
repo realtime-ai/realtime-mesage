@@ -8,21 +8,30 @@ A modular realtime message infrastructure built on Socket.IO and Redis. Provides
 - **Built-in Presence**: Production-ready presence orchestration with epoch-based fencing and TTL expiry
 - **Direct API Access**: Modules have direct access to Socket.IO and Redis without abstraction layers
 - **Multi-node Support**: Redis adapter keeps multiple Socket.IO nodes in sync
-- **TypeScript SDK**: Browser client (`rtm-sdk/`) with automatic heartbeats and reconnection
+- **TypeScript SDK**: Browser client (`@realtime-mesage/sdk`) with automatic heartbeats and reconnection
 - **Load Testing**: Benchmark harness to validate scale assumptions
+- **Monorepo Structure**: Clean separation between server and SDK packages using pnpm workspaces
 
 ## Repository Layout
 
 ```
-├── src/
-│   ├── core/             # Core framework (RealtimeServer, module system)
-│   ├── modules/presence/ # Built-in presence module
-│   ├── server.ts         # Server entry point
-│   └── config.ts         # Configuration
-├── rtm-sdk/              # Browser SDK
-├── examples/             # Custom module examples
-├── benchmark/            # Load testing
-└── package.json          # Workspace scripts
+├── packages/
+│   ├── server/           # Server package (@realtime-mesage/server)
+│   │   ├── src/
+│   │   │   ├── core/     # Core framework (RealtimeServer, module system)
+│   │   │   ├── modules/presence/  # Built-in presence module
+│   │   │   ├── server.ts # Server entry point
+│   │   │   └── config.ts # Configuration
+│   │   ├── examples/     # Custom module examples
+│   │   └── benchmark/    # Load testing
+│   └── sdk/              # Browser SDK package (@realtime-mesage/sdk)
+│       ├── src/
+│       │   ├── core/     # Client core
+│       │   └── modules/presence/  # Presence channel
+│       ├── examples/     # SDK usage examples
+│       └── demo/         # Interactive demo
+├── package.json          # Workspace root
+└── pnpm-workspace.yaml   # Workspace configuration
 ```
 
 ## Getting Started
@@ -30,12 +39,13 @@ A modular realtime message infrastructure built on Socket.IO and Redis. Provides
 ### Prerequisites
 
 - Node.js 18+
+- pnpm 8+ (recommended) or npm with workspaces
 - Redis 6+ (single instance or cluster)
 
 ### Installation
 
 ```bash
-npm install
+pnpm install
 ```
 
 ### Environment Variables
@@ -53,27 +63,37 @@ npm install
 Development mode (ts-node):
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
 Production build & run:
 
 ```bash
-npm run build
-npm start
+pnpm build
+pnpm start
 ```
 
 ### Testing
 
+Run all tests:
+
 ```bash
-npm test
+pnpm test
+```
+
+Run specific package tests:
+
+```bash
+pnpm test:server  # Server tests only
+pnpm test:sdk     # SDK tests only
+pnpm test:e2e     # E2E integration tests (requires Redis)
 ```
 
 ## Extending with Custom Modules
 
 The modular architecture allows you to add custom features (chat, notifications, analytics, etc.) without modifying core code.
 
-See `examples/custom-chat-module/` for a complete working example, or refer to [CLAUDE.md](./CLAUDE.md#creating-custom-modules) for detailed module development guide.
+See `packages/server/examples/custom-chat-module/` for a complete working example, or refer to [CLAUDE.md](./CLAUDE.md#creating-custom-modules) for detailed module development guide.
 
 ## Socket.IO Protocol
 
@@ -89,7 +109,7 @@ Clients should keep the latest `epoch` returned by `presence:join` and send it w
 
 ## Web SDK & Demo
 
-The `rtm-sdk/` package exposes a browser-friendly `RealtimeMessageClient` with:
+The `@realtime-mesage/sdk` package (`packages/sdk/`) exposes a browser-friendly `RealtimeClient` with:
 
 - Automatic heartbeat scheduling and fencing-aware acknowledgements
 - `emit`/`on` helpers that mirror Socket.IO's API for custom application events
@@ -99,19 +119,21 @@ The `rtm-sdk/` package exposes a browser-friendly `RealtimeMessageClient` with:
 Build the SDK and launch the demo:
 
 ```bash
-npm run build:sdk
-npm run sdk:demo
+pnpm build:sdk
+pnpm sdk:demo
 ```
 
 Visit <http://localhost:4173> to join a room, send presence heartbeats, and experiment with custom events.
+
+See `packages/sdk/README.md` for detailed SDK documentation and usage examples.
 
 ## Load Testing
 
 Simulate 100 rooms × 2 users (or any custom scenario) with the benchmark script:
 
 ```bash
-npm run build:sdk   # optional, if you want fresh dist assets
-node benchmark/presence-load-test.mjs
+pnpm build:sdk   # optional, if you want fresh dist assets
+pnpm benchmark:presence
 ```
 
 Environment variables such as `TARGET_URL`, `ROOM_COUNT`, and `HEARTBEATS_PER_SEC` control the workload. The script records latency percentiles, error counts, and presence events to help validate scale assumptions.

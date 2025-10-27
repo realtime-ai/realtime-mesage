@@ -1,16 +1,13 @@
 {
-  "extends": "../tsconfig.json",
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "./src",
-    "module": "esnext",
+    "module": "commonjs",
     "target": "es2019",
-    "declaration": true,
-    "declarationMap": true,
-    "moduleResolution": "bundler",
+    "moduleResolution": "node",
     "types": ["node"],
-    "lib": ["dom", "es2020"],
-    "jsx": "preserve"
+    "lib": ["dom", "es2020"]
   },
   "include": ["src/**/*.ts"],
   "exclude": ["dist", "**/*.spec.ts", "**/*.test.ts"]
