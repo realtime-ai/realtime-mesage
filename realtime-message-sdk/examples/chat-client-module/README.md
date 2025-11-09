@@ -42,7 +42,7 @@ This chat module provides:
 ## Usage
 
 ```typescript
-import { RealtimeClient, createPresenceModule } from "rtm-sdk";
+import { RealtimeClient, createPresenceModule } from "realtime-message-sdk";
 import { createChatModule } from "./chat-module";
 
 const client = new RealtimeClient({

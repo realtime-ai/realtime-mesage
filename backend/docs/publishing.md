@@ -196,7 +196,7 @@ npm publish --registry=https://npm.pkg.github.com
 ```bash
 # Create package.json first (see workflow for template)
 npm run build:sdk
-cd rtm-sdk
+cd realtime-message-sdk
 npm publish --registry=https://npm.pkg.github.com
 ```
 
@@ -235,7 +235,7 @@ Both workflows run tests before publishing:
 
 **SDK Workflow:**
 ```yaml
-- run: npm run test:unit -- rtm-sdk/
+- run: npm run test:unit -- realtime-message-sdk/
 ```
 
 ### Publishing from Protected Branches

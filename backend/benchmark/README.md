@@ -83,7 +83,7 @@ ROOM_COUNT=5 TEST_DURATION_MS=30000 npm run benchmark:sdk
 | Feature | `presence-load-test.mjs` | `sdk-presence-load-test.mjs` |
 |---------|-------------------------|------------------------------|
 | **Target** | Server protocol | SDK API |
-| **Client** | Raw Socket.IO client | rtm-sdk RealtimeClient |
+| **Client** | Raw Socket.IO client | realtime-message-sdk RealtimeClient |
 | **Overhead** | Minimal | Includes SDK overhead |
 | **Default Load** | High (100 rooms, 10 hb/s) | Moderate (10 rooms, 1 hb/s) |
 | **Use Case** | Server stress testing | SDK integration testing |
@@ -129,7 +129,7 @@ Both benchmarks report:
 
 ```
 Starting SDK presence load: 20 clients across 10 rooms, 1 heartbeats/s per user
-Using rtm-sdk with built-in presence API
+Using realtime-message-sdk with built-in presence API
 [5.0s] connected=20/20 joined=20/20 heartbeat_ok=85/85 events=180 errors=0
 
 SDK Load test summary

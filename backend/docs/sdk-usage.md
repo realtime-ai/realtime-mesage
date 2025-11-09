@@ -8,14 +8,14 @@
 npm run build:sdk
 ```
 
-构建产物位于 `rtm-sdk/dist`，可以作为 npm 包发布或在项目中直接引用。
+构建产物位于 `realtime-message-sdk/dist`，可以作为 npm 包发布或在项目中直接引用。
 
 ## 快速开始
 
 ### 基础 Presence 用法
 
 ```ts
-import { RealtimeClient } from "rtm-sdk";
+import { RealtimeClient } from "realtime-message-sdk";
 
 // 创建并连接客户端
 const client = new RealtimeClient({
@@ -268,7 +268,7 @@ socket.emit("user:profile", { userId: "123" }, (profile) => {
 ### 示例：聊天模块
 
 ```ts
-import type { ClientModule, ClientModuleContext } from "rtm-sdk";
+import type { ClientModule, ClientModuleContext } from "realtime-message-sdk";
 
 export interface ChatMessage {
   msgId: string;
@@ -358,7 +358,7 @@ export function createChatModule(): ClientModule & { api: ChatModuleAPI } {
 ### 使用自定义模块
 
 ```ts
-import { RealtimeClient } from "rtm-sdk";
+import { RealtimeClient } from "realtime-message-sdk";
 import { createChatModule } from "./chat-module";
 
 const client = new RealtimeClient({ baseUrl: "https://rtm.yourdomain.com" });
@@ -384,7 +384,7 @@ const history = await chatModule.api.loadHistory("room-123", 100);
 ## 完整示例：Presence + 自定义消息
 
 ```ts
-import { RealtimeClient } from "rtm-sdk";
+import { RealtimeClient } from "realtime-message-sdk";
 
 // 初始化客户端
 const client = new RealtimeClient({
@@ -474,7 +474,7 @@ import type {
   PresenceStatePatch,
   PresenceChannelEventMap,
   CustomEmitOptions,
-} from "rtm-sdk";
+} from "realtime-message-sdk";
 ```
 
 ## 高级模式
@@ -583,7 +583,7 @@ Demo 功能：
 ## 项目结构
 
 ```
-rtm-sdk/
+realtime-message-sdk/
   src/
     core/
       realtime-client.ts       # 核心客户端（内置 Presence API）

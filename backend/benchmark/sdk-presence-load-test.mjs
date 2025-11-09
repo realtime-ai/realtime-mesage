@@ -7,7 +7,11 @@ import { dirname, join } from "node:path";
 // Import SDK from built dist
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+<<<<<<<< HEAD:packages/server/benchmark/sdk-presence-load-test.mjs
 const sdkPath = join(__dirname, "../../sdk/dist/index.js");
+========
+const sdkPath = join(__dirname, "../../realtime-message-sdk/dist/index.js");
+>>>>>>>> d7d91d4 (refactor: split backend and sdk workspaces):backend/benchmark/sdk-presence-load-test.mjs
 
 const { RealtimeClient } = await import(sdkPath);
 
@@ -51,7 +55,7 @@ progressTimer.unref();
     `Starting SDK presence load: ${TOTAL_CLIENTS} clients across ${ROOM_COUNT} rooms, ` +
       `${HEARTBEATS_PER_SEC} heartbeats/s per user targeting ${TARGET_URL}`
   );
-  console.log(`Using rtm-sdk with built-in presence API`);
+  console.log(`Using realtime-message-sdk with built-in presence API`);
 
   const tasks = Array.from({ length: TOTAL_CLIENTS }, (_v, index) => runClient(index));
   await Promise.allSettled(tasks);

@@ -13,20 +13,20 @@ A lightweight, modular JavaScript SDK for building real-time messaging applicati
 
 ## Installation
 
-The SDK sources live in `rtm-sdk/src`. Build them with the provided npm script:
+The SDK sources live in `realtime-message-sdk/src`. Build them with the provided npm script:
 
 ```bash
 npm run build:sdk
 ```
 
-The compiled output will be written to `rtm-sdk/dist` (by `tsc`). You can then publish it as a package, bundle it into a web app, or import it via relative paths in a monorepo.
+The compiled output will be written to `realtime-message-sdk/dist` (by `tsc`). You can then publish it as a package, bundle it into a web app, or import it via relative paths in a monorepo.
 
 ## Quick Start
 
 ### Basic Presence Usage
 
 ```ts
-import { RealtimeClient } from "rtm-sdk";
+import { RealtimeClient } from "realtime-message-sdk";
 
 // Create and connect client
 const client = new RealtimeClient({
@@ -74,7 +74,7 @@ await client.disconnect();
 The main client manages Socket.IO connection lifecycle and provides built-in presence API.
 
 ```ts
-import { RealtimeClient } from "rtm-sdk";
+import { RealtimeClient } from "realtime-message-sdk";
 
 const client = new RealtimeClient({
   baseUrl: "https://rtm.yourdomain.com",
@@ -284,7 +284,7 @@ You can create custom modules for domain-specific features like chat, notificati
 ### Example: Chat Module
 
 ```ts
-import type { ClientModule, ClientModuleContext } from "rtm-sdk";
+import type { ClientModule, ClientModuleContext } from "realtime-message-sdk";
 
 export interface ChatMessage {
   msgId: string;
@@ -374,7 +374,7 @@ export function createChatModule(): ClientModule & { api: ChatModuleAPI } {
 ### Usage
 
 ```ts
-import { RealtimeClient } from "rtm-sdk";
+import { RealtimeClient } from "realtime-message-sdk";
 import { createChatModule } from "./chat-module";
 
 const client = new RealtimeClient({ baseUrl: "https://rtm.yourdomain.com" });
@@ -400,7 +400,7 @@ const history = await chatModule.api.loadHistory("room-123", 100);
 ## Complete Example: Presence + Custom Messaging
 
 ```ts
-import { RealtimeClient } from "rtm-sdk";
+import { RealtimeClient } from "realtime-message-sdk";
 
 // Setup client with presence defaults
 const client = new RealtimeClient({
@@ -490,7 +490,7 @@ import type {
   PresenceStatePatch,
   PresenceChannelEventMap,
   CustomEmitOptions,
-} from "rtm-sdk";
+} from "realtime-message-sdk";
 ```
 
 ## Advanced Patterns
@@ -599,7 +599,7 @@ The demo allows you to:
 ## Project Structure
 
 ```
-rtm-sdk/
+realtime-message-sdk/
   src/
     core/
       realtime-client.ts       # Core client with built-in presence API

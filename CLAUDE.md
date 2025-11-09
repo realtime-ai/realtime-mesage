@@ -12,39 +12,35 @@ A modular realtime message infrastructure built on Socket.IO and Redis. The proj
 - Extensible through pluggable modules
 - Direct access to Socket.IO and Redis (no over-abstraction)
 
-**Repository Structure (Monorepo):**
-- **[packages/server/src/core/](packages/server/src/core/)** - Core framework (RealtimeServer, module system)
-- **[packages/server/src/modules/presence/](packages/server/src/modules/presence/)** - Built-in presence module
-- **[packages/server/examples/](packages/server/examples/)** - Custom module examples
-- **[packages/sdk/](packages/sdk/)** - Browser SDK (@realtime-mesage/sdk)
-- **[packages/server/benchmark/](packages/server/benchmark/)** - Load-testing harness
+**Repository Structure:**
+- **[backend/src/core/](backend/src/core/)** - Core framework (RealtimeServer, module system)
+- **[backend/src/modules/presence/](backend/src/modules/presence/)** - Built-in presence module
+- **[backend/examples/](backend/examples/)** - Custom module examples
+- **[realtime-message-sdk/](realtime-message-sdk/)** - Browser SDK
+- **[backend/benchmark/](backend/benchmark/)** - Load-testing harness
 
 ## Common Commands
 
 ### Development & Build
 ```bash
-pnpm dev             # Run server in development mode (ts-node)
-pnpm build           # Compile all packages (server + SDK)
-pnpm build:server    # Compile server TypeScript to packages/server/dist/
-pnpm build:sdk       # Compile SDK TypeScript to packages/sdk/dist/
-pnpm start           # Run compiled server from dist/
+npm run dev          # Run server in development mode (ts-node)
+npm run build        # Compile server TypeScript to dist/
+npm run build:sdk    # Compile SDK TypeScript to realtime-message-sdk/dist/
+npm start            # Run compiled server from dist/
 ```
 
 ### Testing & Benchmarking
 ```bash
-pnpm test                       # Run all test suites (Vitest)
-pnpm test:server                # Run server tests only
-pnpm test:sdk                   # Run SDK tests only
-pnpm test:e2e                   # Run E2E integration tests (requires Redis)
-pnpm benchmark:presence         # Launch load test (100 rooms × 2 users)
-pnpm sdk:demo                   # Serve SDK demo at http://localhost:4173
+npm test                        # Run test suite (Vitest)
+npm run benchmark:presence      # Launch load test (100 rooms × 2 users)
+npm run sdk:demo                # Serve SDK demo at http://localhost:4173
 ```
 
 ## Architecture
 
 ### Core Framework
 
-**RealtimeServer** ([packages/server/src/core/realtime-server.ts](packages/server/src/core/realtime-server.ts:1)) manages module registration and lifecycle:
+**RealtimeServer** ([backend/src/core/realtime-server.ts](backend/src/core/realtime-server.ts:1)) manages module registration and lifecycle:
 
 ```typescript
 const server = new RealtimeServer({ io, redis });
@@ -52,7 +48,7 @@ server.use(createPresenceModule(options));  // Register modules
 await server.start();
 ```
 
-**Module Interface** ([packages/server/src/core/types.ts](packages/server/src/core/types.ts:1)):
+**Module Interface** ([backend/src/core/types.ts](backend/src/core/types.ts:1)):
 ```typescript
 interface RealtimeModule {
   name: string;
@@ -70,7 +66,7 @@ interface ModuleContext {
 
 ### Presence Module
 
-**Location:** [packages/server/src/modules/presence/](packages/server/src/modules/presence/)
+**Location:** [src/modules/presence/](src/modules/presence/)
 
 Provides authoritative presence orchestration with:
 - **Epoch-based fencing**: Monotonically increasing `epoch` prevents race conditions from stale heartbeats
@@ -79,11 +75,11 @@ Provides authoritative presence orchestration with:
 - **Pub/sub bridge**: Broadcasts presence events via Redis to all Socket.IO nodes
 
 **Files:**
-- [service.ts](packages/server/src/modules/presence/service.ts:1) - Core business logic (formerly PresenceService)
-- [handlers.ts](packages/server/src/modules/presence/handlers.ts:1) - Socket.IO event handlers (join/heartbeat/leave)
-- [index.ts](packages/server/src/modules/presence/index.ts:1) - Module factory (`createPresenceModule`)
-- [keys.ts](packages/server/src/modules/presence/keys.ts:1) - Redis key patterns
-- [types.ts](packages/server/src/modules/presence/types.ts:1) - Type definitions
+- [service.ts](src/modules/presence/service.ts:1) - Core business logic (formerly PresenceService)
+- [handlers.ts](src/modules/presence/handlers.ts:1) - Socket.IO event handlers (join/heartbeat/leave)
+- [index.ts](src/modules/presence/index.ts:1) - Module factory (`createPresenceModule`)
+- [keys.ts](src/modules/presence/keys.ts:1) - Redis key patterns
+- [types.ts](src/modules/presence/types.ts:1) - Type definitions
 
 **Redis Data Model:**
 - `prs:conn:<connId>` - Connection hash (userId, roomId, state, epoch, last_seen_ms) with TTL
@@ -105,7 +101,7 @@ server.use(createPresenceModule({
 
 ### Server Entry Point
 
-**[packages/server/src/server.ts](packages/server/src/server.ts:1)** (59 lines):
+**[src/server.ts](src/server.ts:1)** (59 lines):
 1. Initialize Socket.IO + Redis
 2. Create RealtimeServer and register modules
 3. Start server
@@ -117,17 +113,18 @@ server.use(createPresenceModule({
 
 ### SDK Client
 
-**RealtimeClient** ([packages/sdk/src/core/realtime-client.ts](packages/sdk/src/core/realtime-client.ts)) provides a high-level browser API:
+**RealtimeMessageClient** ([realtime-message-sdk/src/client.ts](realtime-message-sdk/src/client.ts)) provides a high-level browser API:
 
-- **PresenceChannel** ([packages/sdk/src/modules/presence/presence-channel.ts](packages/sdk/src/modules/presence/presence-channel.ts)) encapsulates a single room's lifecycle:
+- **PresenceChannel** ([realtime-message-sdk/src/presence/presence-channel.ts](realtime-message-sdk/src/presence/presence-channel.ts)) encapsulates a single room's lifecycle:
   - Auto-schedules heartbeats every `heartbeatIntervalMs` (default 10s).
   - Tracks missed heartbeats and fires errors when threshold exceeded.
   - Merges client hooks with internal EventEmitter for `connect`, `disconnect`, `reconnect`, `presenceEvent`, etc.
   - Supports custom app events via overloaded `emit()` with optional ack/timeout.
+- **SocketPresenceTransport** ([realtime-message-sdk/src/transport/socket-transport.ts](realtime-message-sdk/src/transport/socket-transport.ts)) manages the underlying Socket.IO connection and reconnection logic.
 
 ### Creating Custom Modules
 
-See [packages/server/examples/custom-chat-module/](packages/server/examples/custom-chat-module/) for a complete example.
+See [examples/custom-chat-module/](examples/custom-chat-module/) for a complete example.
 
 **Basic Pattern:**
 ```typescript
@@ -159,7 +156,7 @@ server.use(createMyModule(options));
 
 ## Environment Variables
 
-See [packages/server/src/config.ts](packages/server/src/config.ts) for defaults. Key variables:
+See [src/config.ts](src/config.ts) for defaults. Key variables:
 
 - `PORT`: HTTP server port (default: 3000)
 - `REDIS_URL`: Redis connection string (default: redis://localhost:6379)
@@ -169,7 +166,7 @@ See [packages/server/src/config.ts](packages/server/src/config.ts) for defaults.
 
 ## Testing
 
-Tests are located in [packages/server/src/modules/presence/service.test.ts](packages/server/src/modules/presence/service.test.ts:1) and use `ioredis-mock`.
+Tests are located in [src/modules/presence/service.test.ts](src/modules/presence/service.test.ts:1) and use `ioredis-mock`.
 
 **Run specific test:**
 ```bash

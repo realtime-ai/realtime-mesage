@@ -1,0 +1,29 @@
+{
+  "name": "@realtime-message/sdk",
+  "version": "1.0.0",
+  "description": "Realtime Message browser SDK with presence support.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "test": "vitest run --config vitest.config.mjs",
+    "test:watch": "vitest --config vitest.config.mjs",
+    "demo": "node demo/server.mjs"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
