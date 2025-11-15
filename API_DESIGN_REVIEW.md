@@ -10,11 +10,11 @@
 const presence = client.createPresenceChannel()
 await presence.join({ roomId: 'room-1', userId: 'alice' })
 
-const metadata = client.channelMetadata('MESSAGE', 'room-1')
+const metadata = client.channelMetadata('room-1')
 await metadata.set([{ key: 'topic', value: 'Meeting' }])
 
 // ✅ 改进：统一入口
-const channel = client.channel('MESSAGE', 'room-1')
+const channel = client.channel('room-1')
 await channel.presence.join('alice', { status: 'active' })
 await channel.storage.set('topic', 'Meeting')
 ```
@@ -68,22 +68,22 @@ channel.on('snapshot', handler)
 ```typescript
 // 设置（覆盖）
 socket.on('metadata:setChannel', {
-  channelName, channelType, data: [{ key, value, revision? }],
+  channelName, data: [{ key, value, revision? }],
   options?: { majorRevision?, lockName?, addTimestamp?, addUserId? }
 })
 
 // 更新（增量）
-socket.on('metadata:updateChannel', { channelName, channelType, data, options? })
+socket.on('metadata:updateChannel', { channelName, data, options? })
 
 // 删除
-socket.on('metadata:removeChannel', { channelName, channelType, data?, options? })
+socket.on('metadata:removeChannel', { channelName, data?, options? })
 
 // 获取
-socket.on('metadata:getChannel', { channelName, channelType })
+socket.on('metadata:getChannel', { channelName })
 
 // 事件推送
 socket.emit('metadata:event', {
-  channelName, channelType, operation: 'set' | 'update' | 'remove',
+  channelName, operation: 'set' | 'update' | 'remove',
   items, majorRevision, timestamp, authorUid?
 })
 ```
@@ -210,51 +210,29 @@ await channel.metadata.set({ topic: 'Meeting' })  // 更直观
 
 #### 当前问题
 ```typescript
-// 每次调用都需要传递 channelName 和 channelType
+// 每次调用都需要传递 channelName
 await client.setChannelMetadata({
   channelName: 'room-1',
-  channelType: 'MESSAGE',
   data: [{ key: 'topic', value: 'Meeting' }]
 })
 
 await client.updateChannelMetadata({
-  channelName: 'room-1',  // 重复
-  channelType: 'MESSAGE', // 重复
+  channelName: 'room-1',  // 每次都要重复
   data: [{ key: 'topic', value: 'Updated' }]
 })
 ```
 
-#### 改进建议: Scoped Metadata Client
+#### 改进建议: 统一 Channel API（已解决）
 
 ```typescript
-// 创建作用域客户端
-const roomMetadata = client.channelMetadata('MESSAGE', 'room-1')
+// ✅ 通过统一的 Channel API 自动解决
+const room = client.channel('room-1')
 
-// 简化调用
-await roomMetadata.set([{ key: 'topic', value: 'Meeting' }])
-await roomMetadata.update([{ key: 'topic', value: 'Updated' }])
-await roomMetadata.remove(['topic'])
-const data = await roomMetadata.get()
-
-// 实现
-class ScopedChannelMetadata {
-  constructor(
-    private client: ChannelMetadataClient,
-    private channelType: string,
-    private channelName: string
-  ) {}
-
-  async set(data: ChannelMetadataItemInput[], options?: ChannelMetadataOptions) {
-    return this.client.setChannelMetadata({
-      channelType: this.channelType,
-      channelName: this.channelName,
-      data,
-      options
-    })
-  }
-
-  // ... 其他方法类似
-}
+// channelName 只需传一次
+await room.storage.set('topic', 'Meeting')
+await room.storage.set('topic', 'Updated')
+await room.storage.remove('topic')
+const data = await room.storage.getAll()
 ```
 
 ---
@@ -266,7 +244,6 @@ class ScopedChannelMetadata {
 // set: 覆盖所有 metadata（但实际上只设置传入的 key）
 await metadata.setChannelMetadata({
   channelName: 'room-1',
-  channelType: 'MESSAGE',
   data: [{ key: 'topic', value: 'Meeting' }]
 })
 // 期望：清空所有旧数据，只保留 topic
@@ -275,39 +252,28 @@ await metadata.setChannelMetadata({
 // update: 增量更新
 await metadata.updateChannelMetadata({
   channelName: 'room-1',
-  channelType: 'MESSAGE',
   data: [{ key: 'moderator', value: 'alice' }]
 })
 ```
 
-#### 改进建议: 重命名为 Replace/Upsert
+#### 改进建议: 使用更清晰的方法名
 
 ```typescript
-// 方案 A: 更清晰的命名
-interface MetadataOperations {
-  // replace: 完全替换（清空旧数据）
-  replace(data: MetadataItem[], options?: MetadataOptions): Promise<Response>
+// ✅ 新的 Storage API 语义更清晰
+const room = client.channel('room-1')
 
-  // upsert: 插入或更新（保留其他 key）
-  upsert(data: MetadataItem[], options?: MetadataOptions): Promise<Response>
-
-  // patch: 必须已存在才能更新
-  patch(data: MetadataItem[], options?: MetadataOptions): Promise<Response>
-
-  // remove: 删除指定 key
-  remove(keys: string[], options?: MetadataOptions): Promise<Response>
-
-  // clear: 清空所有
-  clear(options?: MetadataOptions): Promise<Response>
-}
-
-// 方案 B: 保持现有命名，但添加 replaceAll 选项
-await metadata.setChannelMetadata({
-  channelName: 'room-1',
-  channelType: 'MESSAGE',
-  data: [{ key: 'topic', value: 'Meeting' }],
-  options: { replaceAll: true }  // 清空其他 key
+// setMany: 批量设置（保留其他 key）
+await room.storage.setMany({
+  topic: 'Meeting',
+  moderator: 'alice'
 })
+
+// clear + setMany: 完全替换
+await room.storage.clear()
+await room.storage.setMany({ topic: 'Meeting' })
+
+// 或者单项操作（最常用）
+await room.storage.set('topic', 'Meeting')
 ```
 
 ---
@@ -319,7 +285,6 @@ await metadata.setChannelMetadata({
 // 场景：同时更新多个字段，要么全部成功，要么全部失败
 await metadata.updateChannelMetadata({
   channelName: 'room-1',
-  channelType: 'MESSAGE',
   data: [
     { key: 'topic', value: 'Updated Topic' },
     { key: 'moderator', value: 'bob' },
@@ -328,37 +293,27 @@ await metadata.updateChannelMetadata({
   options: { majorRevision: 5 }
 })
 
-// 问题：如果 topic 的 revision 匹配但 moderator 不匹配，
-// 目前会抛出错误，但无法部分应用
+// 问题：如果某个 key 的 revision 不匹配，目前会全部失败
 ```
 
-#### 改进建议: 提供批量操作策略
+#### 改进建议: 提供批量操作策略（低优先级）
 
 ```typescript
-interface MetadataBatchOptions extends ChannelMetadataOptions {
-  // 批量更新策略
-  batchStrategy?: 'all-or-nothing' | 'partial'
-}
+// 未来可以考虑支持 partial 模式
+const room = client.channel('room-1')
 
-// all-or-nothing: 默认行为，任何一个失败就全部失败
-await metadata.updateChannelMetadata({
-  channelName: 'room-1',
-  channelType: 'MESSAGE',
-  data: [...],
-  options: { batchStrategy: 'all-or-nothing' }
-})
-
-// partial: 返回成功和失败的详情
-const result = await metadata.updateChannelMetadata({
-  channelName: 'room-1',
-  channelType: 'MESSAGE',
-  data: [...],
-  options: { batchStrategy: 'partial' }
+await room.storage.setMany({
+  topic: 'Updated Topic',
+  moderator: 'bob',
+  pinned: true
+}, {
+  majorRevision: 5,
+  batchStrategy: 'partial' // 部分成功也返回结果
 })
 
 // 扩展响应类型
-interface ChannelMetadataResponsePartial extends ChannelMetadataResponse {
-  succeeded: string[];  // 成功的 key
+interface StorageSetResult {
+  succeeded: string[];
   failed: Array<{ key: string; reason: string }>;
 }
 ```
@@ -419,7 +374,6 @@ await redis.set('prs:lock:room-1', 'alice', 'EX', 30)
 
 await metadata.updateChannelMetadata({
   channelName: 'room-1',
-  channelType: 'MESSAGE',
   data: [...],
   options: { lockName: 'room-1' },
   actorUserId: 'alice'
@@ -429,39 +383,22 @@ await metadata.updateChannelMetadata({
 await redis.del('prs:lock:room-1')
 ```
 
-#### 改进建议: 提供 Lock API
+#### 改进建议: Storage 自带 Lock 管理
 
 ```typescript
-// 方案 A: 高级 API with 自动释放
-await client.withLock('room-1', async (lockedMetadata) => {
-  await lockedMetadata.updateChannelMetadata({
-    channelName: 'room-1',
-    channelType: 'MESSAGE',
-    data: [...]
-  })
+// ✅ 新 API：自动管理 lock
+const room = client.channel('room-1')
+
+await room.storage.withLock(async (storage) => {
+  const current = await storage.getAll()
+  await storage.set('counter', current.counter + 1)
   // 自动释放 lock
 })
 
-// 方案 B: 显式 Lock 对象
-const lock = await client.acquireLock('room-1', { ttlMs: 30000 })
-try {
-  await metadata.updateChannelMetadata({
-    channelName: 'room-1',
-    channelType: 'MESSAGE',
-    data: [...],
-    options: { lock }  // 传递 lock 对象而不是字符串
-  })
-} finally {
-  await lock.release()
-}
-
-// Lock 接口
-interface MetadataLock {
-  lockName: string;
-  ownerId: string;
-  release(): Promise<void>;
-  extend(ttlMs: number): Promise<void>;
-}
+// 底层实现自动处理：
+// 1. 获取 lock
+// 2. 执行操作
+// 3. 无论成功失败都释放 lock
 ```
 
 ---
@@ -473,25 +410,25 @@ interface MetadataLock {
 // Metadata 事件无法过滤，只能监听所有 channel
 client.onChannelEvent((event) => {
   // 收到所有 channel 的事件，需要手动过滤
-  if (event.channelName === 'room-1' && event.channelType === 'MESSAGE') {
+  if (event.channelName === 'room-1') {
     // 处理
   }
 })
 ```
 
-#### 改进建议: 支持 Channel 订阅
+#### 改进建议: Channel 级别的事件订阅（已解决）
 
 ```typescript
-// 方案 A: 订阅特定 channel
-const subscription = client.subscribeToChannel('MESSAGE', 'room-1', (event) => {
-  // 只收到 room-1 的事件
-})
-await subscription.unsubscribe()
+// ✅ 新 API：自动过滤
+const room = client.channel('room-1')
 
-// 方案 B: 使用 Scoped Client（配合前面的建议）
-const roomMetadata = client.channelMetadata('MESSAGE', 'room-1')
-roomMetadata.on('updated', (event) => {
-  // 只收到当前 channel 的更新事件
+// 只收到当前 room 的事件
+room.storage.on('updated', (event) => {
+  console.log('Room storage updated:', event.keys)
+})
+
+room.presence.on('joined', (event) => {
+  console.log('User joined:', event.userId)
 })
 ```
 
@@ -510,46 +447,26 @@ interface ChannelMetadataEntry {
 // 使用时需要手动序列化
 await metadata.setChannelMetadata({
   channelName: 'room-1',
-  channelType: 'MESSAGE',
   data: [
     { key: 'config', value: JSON.stringify({ theme: 'dark', lang: 'en' }) }
   ]
 })
 ```
 
-#### 改进建议: 支持 JSON Value
+#### 改进建议: 自动支持 JSON 值
 
 ```typescript
-// 方案 A: 泛型 Value
-interface ChannelMetadataEntry<T = unknown> {
-  value: T;
-  revision: number;
-  updated?: string;
-  authorUid?: string;
-}
+// ✅ 新 API：自动序列化复杂类型
+const room = client.channel<UserState, RoomStorage>('room-1')
 
-// 使用时自动序列化
-await metadata.setChannelMetadata({
-  channelName: 'room-1',
-  channelType: 'MESSAGE',
-  data: [
-    { key: 'config', value: { theme: 'dark', lang: 'en' } }
-  ]
-})
+// 类型安全的设置
+await room.storage.set('config', { theme: 'dark', lang: 'en' })
 
-// 方案 B: 添加 valueType 标记
-interface ChannelMetadataEntry {
-  value: string;
-  valueType?: 'string' | 'json' | 'number' | 'boolean';
-  revision: number;
-}
+// 自动反序列化，类型推断
+const config = await room.storage.get('config')
+// TypeScript 知道 config 是 { theme: string; lang: string }
 
-// 客户端自动解析
-const config = await metadata.getChannelMetadata({
-  channelName: 'room-1',
-  channelType: 'MESSAGE'
-})
-// config.metadata.config.value 自动解析为对象
+// 底层自动处理 JSON.stringify / JSON.parse
 ```
 
 ---
@@ -564,7 +481,7 @@ const config = await metadata.getChannelMetadata({
 const presenceChannel = client.createPresenceChannel()
 await presenceChannel.join({ roomId: 'room-1', userId: 'alice' })
 
-const metadata = client.channelMetadata('MESSAGE', 'room-1')
+const metadata = client.channelMetadata('room-1')
 await metadata.set([{ key: 'topic', value: 'Meeting' }])
 // 这两个操作的是同一个 channel，但 API 完全分离！
 ```
@@ -577,19 +494,21 @@ await metadata.set([{ key: 'topic', value: 'Meeting' }])
 class RealtimeClient {
   /**
    * 获取 channel 实例（Presence + Storage 的统一入口）
+   * @param channelId - 频道唯一标识符
    */
-  channel(channelType: string, channelName: string): Channel
+  channel<TPresenceState = unknown, TStorageSchema = unknown>(
+    channelId: string
+  ): Channel<TPresenceState, TStorageSchema>
 
   // 向后兼容的低级 API（deprecated）
   createPresenceChannel(): PresenceChannel
-  channelMetadata(): ChannelMetadataClient
+  channelMetadata(channelName: string): ChannelMetadataClient
 }
 
 // ===== Channel 类（统一入口）=====
 class Channel<TPresenceState = unknown, TStorageSchema = unknown> {
   constructor(
-    private channelType: string,
-    private channelName: string
+    private channelId: string
   ) {}
 
   // ===== Presence 子模块 =====
@@ -661,7 +580,7 @@ interface UserPresenceState {
   typing: boolean
 }
 
-const room = client.channel<UserPresenceState, RoomStorage>('MESSAGE', 'room-1')
+const room = client.channel<UserPresenceState, RoomStorage>('room-1')
 
 // 2️⃣ Presence 操作（通过子模块）
 await room.presence.join('alice', { status: 'active', typing: false })
@@ -758,17 +677,17 @@ const value = await room.get('topic')                           // 等同于 roo
 ```typescript
 // ❌ 当前：分散的 API
 const presence = client.createPresenceChannel()
-const metadata = client.channelMetadata('MESSAGE', 'room-1')
+const metadata = client.channelMetadata('room-1')
 
 // ✅ 改进：统一入口
-const channel = client.channel('MESSAGE', 'room-1')
+const channel = client.channel('room-1')
 await channel.presence.join('alice')
 await channel.storage.set('topic', 'Meeting')
 ```
 
 **收益**：
 - 更符合直觉：一个 channel 包含 presence 和 storage
-- 减少参数重复：channelType 和 channelName 只需传一次
+- 更简洁：单参数设计，无冗余
 - 类型安全：`Channel<TPresenceState, TStorageSchema>`
 
 #### 2. Metadata → Storage 重命名
