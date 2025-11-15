@@ -1,8 +1,4 @@
 {
-<<<<<<<< HEAD:packages/sdk/tsconfig.json
-  "extends": "../../tsconfig.base.json",
-========
->>>>>>>> d7d91d4 (refactor: split backend and sdk workspaces):realtime-message-sdk/tsconfig.json
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "./src",
@@ -10,9 +6,6 @@
     "target": "es2019",
     "moduleResolution": "node",
     "types": ["node"],
-<<<<<<<< HEAD:packages/sdk/tsconfig.json
-    "lib": ["dom", "es2020"]
-========
     "lib": ["dom", "es2020"],
     "jsx": "preserve",
     "strict": true,
@@ -21,7 +14,6 @@
     "isolatedModules": true,
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true
->>>>>>>> d7d91d4 (refactor: split backend and sdk workspaces):realtime-message-sdk/tsconfig.json
   },
   "include": ["src/**/*.ts"],
   "exclude": ["dist", "**/*.spec.ts", "**/*.test.ts"]

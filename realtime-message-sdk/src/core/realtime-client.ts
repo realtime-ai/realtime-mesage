@@ -6,6 +6,7 @@ import type {
   PresenceJoinResponse,
   PresenceChannelOptions,
 } from "../modules/presence/types";
+import { ChannelMetadataClient } from "../modules/metadata/channel-metadata-client";
 
 const defaultLogger: Logger = {
   debug: () => {
@@ -23,9 +24,17 @@ export class RealtimeClient {
   private logger: Logger;
   private presenceChannels = new Set<PresenceChannel>();
   private eventsBound = false;
+  private _metadata: ChannelMetadataClient | null = null;
 
   constructor(private readonly config: RealtimeClientConfig) {
     this.logger = config.logger ?? defaultLogger;
+  }
+
+  get metadata(): ChannelMetadataClient {
+    if (!this._metadata) {
+      throw new Error("Cannot access metadata before connection. Call connect() first.");
+    }
+    return this._metadata;
   }
 
   async connect(): Promise<void> {
@@ -58,6 +67,7 @@ export class RealtimeClient {
         this.logger.info("Socket connected", { id: socket.id });
 
         try {
+          this._metadata = new ChannelMetadataClient(socket, this.logger);
           this.setupEventHandlers();
           resolve();
         } catch (error) {
@@ -82,6 +92,16 @@ export class RealtimeClient {
   async disconnect(): Promise<void> {
     if (!this.socket) {
       return;
+    }
+
+    // Dispose metadata client before disconnecting
+    if (this._metadata) {
+      try {
+        this._metadata.dispose();
+      } catch (error) {
+        this.logger.error("Failed to dispose metadata client", error);
+      }
+      this._metadata = null;
     }
 
     const socket = this.socket;
@@ -120,6 +140,8 @@ export class RealtimeClient {
       }
     }
     this.presenceChannels.clear();
+
+    // disconnect() will handle metadata cleanup
     await this.disconnect();
   }
 
