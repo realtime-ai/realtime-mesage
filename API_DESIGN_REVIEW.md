@@ -1,5 +1,31 @@
 # Presence & Metadata API 设计分析与改进建议
 
+## 🎯 核心建议（TL;DR）
+
+### 两个最重要的架构改进：
+
+#### 1. **统一 Channel 概念** - 将 Presence 和 Storage 整合
+```typescript
+// ❌ 当前：分散的 API
+const presence = client.createPresenceChannel()
+await presence.join({ roomId: 'room-1', userId: 'alice' })
+
+const metadata = client.channelMetadata('MESSAGE', 'room-1')
+await metadata.set([{ key: 'topic', value: 'Meeting' }])
+
+// ✅ 改进：统一入口
+const channel = client.channel('MESSAGE', 'room-1')
+await channel.presence.join('alice', { status: 'active' })
+await channel.storage.set('topic', 'Meeting')
+```
+
+#### 2. **重命名 Metadata → Storage** - 语义更清晰
+- Metadata 通常指"关于数据的元数据"（如文件创建时间）
+- 你们的使用场景是存储频道数据（topic、moderator、config）
+- Storage 更直白，避免混淆
+
+---
+
 ## 📋 当前设计概览
 
 ### Presence API
@@ -530,114 +556,174 @@ const config = await metadata.getChannelMetadata({
 
 ## 🎯 综合改进方案
 
-### 推荐方案：分层 API 设计
+### 核心架构改进：统一的 Channel 概念
+
+#### 问题：当前设计割裂了 Presence 和 Metadata
+```typescript
+// ❌ 分散的 API
+const presenceChannel = client.createPresenceChannel()
+await presenceChannel.join({ roomId: 'room-1', userId: 'alice' })
+
+const metadata = client.channelMetadata('MESSAGE', 'room-1')
+await metadata.set([{ key: 'topic', value: 'Meeting' }])
+// 这两个操作的是同一个 channel，但 API 完全分离！
+```
+
+#### 改进：Channel 统一管理 Presence + Storage
 
 ```typescript
-// ===== Layer 1: 低级 API（保持向后兼容）=====
-class ChannelMetadataClient {
-  async setChannelMetadata(params: ChannelMetadataMutationParams)
-  async updateChannelMetadata(params: ChannelMetadataMutationParams)
-  async removeChannelMetadata(params: ChannelMetadataRemovalParams)
-  async getChannelMetadata(params: ChannelMetadataGetParams)
-}
+// ===== 推荐方案：统一的 Channel API =====
 
-// ===== Layer 2: 高级 API（推荐使用）=====
 class RealtimeClient {
-  // Presence Channel（现有）
-  createPresenceChannel<TState = unknown>(options?: PresenceChannelOptions): PresenceChannel<TState>
+  /**
+   * 获取 channel 实例（Presence + Storage 的统一入口）
+   */
+  channel(channelType: string, channelName: string): Channel
 
-  // 新增：Scoped Metadata
-  channelMetadata(
-    channelType: string,
-    channelName: string
-  ): ScopedChannelMetadata
-
-  // 新增：Lock 管理
-  async acquireLock(
-    lockName: string,
-    options?: { ttlMs?: number; userId?: string }
-  ): Promise<MetadataLock>
-
-  async withLock<T>(
-    lockName: string,
-    callback: (lock: MetadataLock) => Promise<T>,
-    options?: { ttlMs?: number }
-  ): Promise<T>
+  // 向后兼容的低级 API（deprecated）
+  createPresenceChannel(): PresenceChannel
+  channelMetadata(): ChannelMetadataClient
 }
 
-// ===== ScopedChannelMetadata API =====
-class ScopedChannelMetadata {
-  // CRUD 操作
-  async set(items: MetadataItem[], options?: MetadataOptions): Promise<Response>
-  async upsert(items: MetadataItem[], options?: MetadataOptions): Promise<Response>
-  async patch(items: MetadataItem[], options?: MetadataOptions): Promise<Response>
-  async remove(keys: string[], options?: MetadataOptions): Promise<Response>
-  async clear(options?: MetadataOptions): Promise<Response>
-  async get(): Promise<ChannelMetadataResponse>
+// ===== Channel 类（统一入口）=====
+class Channel<TPresenceState = unknown, TStorageSchema = unknown> {
+  constructor(
+    private channelType: string,
+    private channelName: string
+  ) {}
 
-  // 单项操作（便捷方法）
-  async getItem(key: string): Promise<MetadataEntry | null>
-  async setItem(key: string, value: unknown, options?: MetadataOptions): Promise<void>
-  async removeItem(key: string, options?: MetadataOptions): Promise<void>
+  // ===== Presence 子模块 =====
+  readonly presence: ChannelPresence<TPresenceState>
+
+  // ===== Storage 子模块（重命名：Metadata → Storage）=====
+  readonly storage: ChannelStorage<TStorageSchema>
+
+  // ===== 便捷方法（代理到子模块）=====
+
+  // Presence 便捷方法
+  async join(userId: string, state?: TPresenceState): Promise<void>
+  async leave(): Promise<void>
+
+  // Storage 便捷方法
+  async get(key: string): Promise<unknown>
+  async set(key: string, value: unknown): Promise<void>
+  async remove(key: string): Promise<void>
+
+  // 统一的事件订阅
+  on(event: 'presenceJoined' | 'presenceLeft' | 'storageUpdated', handler): () => void
+}
+
+// ===== ChannelPresence 子模块 =====
+class ChannelPresence<TState = unknown> {
+  async join(userId: string, state?: TState): Promise<PresenceSnapshot>
+  async updateState(patch: Partial<TState>): Promise<void>
+  async leave(): Promise<void>
+
+  on(event: 'joined' | 'left' | 'updated', handler: (event) => void): () => void
+
+  // 获取当前在线用户
+  async getMembers(): Promise<PresenceMember<TState>[]>
+}
+
+// ===== ChannelStorage 子模块（重命名：Metadata → Storage）=====
+class ChannelStorage<TSchema = Record<string, unknown>> {
+  // 单项操作
+  async get(key: keyof TSchema): Promise<TSchema[typeof key] | null>
+  async set(key: keyof TSchema, value: TSchema[typeof key], options?: StorageOptions): Promise<void>
+  async remove(key: keyof TSchema, options?: StorageOptions): Promise<void>
+
+  // 批量操作
+  async getAll(): Promise<Partial<TSchema>>
+  async setMany(items: Partial<TSchema>, options?: StorageOptions): Promise<void>
+  async removeMany(keys: Array<keyof TSchema>, options?: StorageOptions): Promise<void>
+  async clear(options?: StorageOptions): Promise<void>
 
   // 事件订阅
   on(event: 'updated' | 'removed', handler: (event) => void): () => void
 
   // Lock 支持
-  async withLock<T>(callback: (metadata: this) => Promise<T>): Promise<T>
+  async withLock<T>(callback: (storage: this) => Promise<T>, options?: LockOptions): Promise<T>
 }
 
 // ===== 使用示例 =====
 const client = new RealtimeClient(socket)
 
-// Presence（保持不变）
-const channel = client.createPresenceChannel<UserPresenceState>()
-await channel.join({ roomId: 'room-1', userId: 'alice', state: { status: 'active' } })
+// 1️⃣ 创建 channel 实例（统一入口）
+interface RoomStorage {
+  topic: string
+  moderator: string
+  pinned: boolean
+  config: { theme: string; lang: string }
+}
 
-// Metadata（新 API）
-const roomMeta = client.channelMetadata('MESSAGE', 'room-1')
+interface UserPresenceState {
+  status: 'active' | 'away' | 'offline'
+  typing: boolean
+}
 
-// 简单使用
-await roomMeta.setItem('topic', 'Daily Standup')
-const topic = await roomMeta.getItem('topic')
+const room = client.channel<UserPresenceState, RoomStorage>('MESSAGE', 'room-1')
+
+// 2️⃣ Presence 操作（通过子模块）
+await room.presence.join('alice', { status: 'active', typing: false })
+await room.presence.updateState({ typing: true })
+
+room.presence.on('joined', (event) => {
+  console.log(`${event.userId} joined`)
+})
+
+const members = await room.presence.getMembers()
+
+// 3️⃣ Storage 操作（通过子模块）
+await room.storage.set('topic', 'Daily Standup')
+await room.storage.set('config', { theme: 'dark', lang: 'en' })
+
+const topic = await room.storage.get('topic')  // TypeScript 类型推断为 string
+const config = await room.storage.get('config') // 类型推断为 { theme: string; lang: string }
 
 // 批量操作
-await roomMeta.upsert([
-  { key: 'topic', value: 'Updated Topic' },
-  { key: 'moderator', value: 'alice' }
-], { addTimestamp: true, addUserId: true })
+await room.storage.setMany({
+  topic: 'Updated Topic',
+  moderator: 'bob',
+  pinned: true
+}, { addTimestamp: true, addUserId: true })
 
 // 带锁操作
-await roomMeta.withLock(async (lockedMeta) => {
-  const current = await lockedMeta.get()
-  await lockedMeta.upsert([
-    { key: 'counter', value: (Number(current.metadata.counter?.value || 0) + 1).toString() }
-  ])
+await room.storage.withLock(async (storage) => {
+  const current = await storage.getAll()
+  await storage.set('topic', current.topic + ' (edited)')
 })
 
-// 订阅事件
-roomMeta.on('updated', (event) => {
-  console.log('Metadata updated:', event.items)
+room.storage.on('updated', (event) => {
+  console.log('Storage updated:', event.keys)
 })
+
+// 4️⃣ 便捷方法（代理到子模块）
+await room.join('alice', { status: 'active', typing: false })  // 等同于 room.presence.join
+await room.set('topic', 'Meeting')                              // 等同于 room.storage.set
+const value = await room.get('topic')                           // 等同于 room.storage.get
 ```
 
 ---
 
 ## 📊 优先级建议
 
+### 🚀 核心架构改进（强烈推荐）
+1. **✨ 统一 Channel 概念** - 将 Presence 和 Storage 整合到单一 Channel 入口
+2. **✨ 重命名 Metadata → Storage** - 语义更准确，避免混淆
+
 ### 高优先级（立即改进）
-1. **✅ 添加 Scoped Metadata API** - 减少参数冗余
-2. **✅ 改进 Lock API** - 提供 `withLock` 便捷方法
-3. **✅ 支持 Metadata 事件过滤** - 避免客户端手动过滤
+3. **✅ 类型安全的 Schema** - 支持泛型 `Channel<TPresenceState, TStorageSchema>`
+4. **✅ 改进 Lock API** - 提供 `storage.withLock()` 便捷方法
+5. **✅ 简化单项操作** - `storage.get(key)` 而不是批量操作
 
 ### 中优先级（下一个版本）
-4. **⚠️ 重命名 set/update** - 改为 replace/upsert，语义更清晰
-5. **⚠️ Presence State 泛型支持** - 提升类型安全
-6. **⚠️ 支持 JSON Value** - 自动序列化/反序列化
+6. **⚠️ 支持 JSON Value** - 自动序列化/反序列化复杂对象
+7. **⚠️ 事件订阅优化** - Channel 级别的统一事件系统
+8. **⚠️ 批量操作改进** - `setMany()` / `removeMany()` 更清晰
 
 ### 低优先级（长期优化）
-7. **📌 统一 Presence 和 Metadata** - 将 Metadata 集成到 PresenceChannel
-8. **📌 批量操作策略** - 支持 partial 模式
+9. **📌 批量操作策略** - 支持 partial 模式（部分成功）
+10. **📌 Storage TTL 支持** - 某些 key 自动过期
 
 ---
 
@@ -666,14 +752,63 @@ roomMeta.on('updated', (event) => {
 - ✅ 强大的并发控制（Epoch + Revision）
 - ✅ 灵活的优化机制（Batching + Lua + Transactional）
 
-### 主要改进方向
-- 🎯 **简化 API** - 减少重复参数，提供作用域客户端
-- 🎯 **提升类型安全** - 泛型支持，明确语义
-- 🎯 **增强便利性** - Lock 自动管理，事件过滤，JSON 值支持
+### 🎯 核心架构改进（最重要的两点）
+
+#### 1. 统一 Channel 概念
+```typescript
+// ❌ 当前：分散的 API
+const presence = client.createPresenceChannel()
+const metadata = client.channelMetadata('MESSAGE', 'room-1')
+
+// ✅ 改进：统一入口
+const channel = client.channel('MESSAGE', 'room-1')
+await channel.presence.join('alice')
+await channel.storage.set('topic', 'Meeting')
+```
+
+**收益**：
+- 更符合直觉：一个 channel 包含 presence 和 storage
+- 减少参数重复：channelType 和 channelName 只需传一次
+- 类型安全：`Channel<TPresenceState, TStorageSchema>`
+
+#### 2. Metadata → Storage 重命名
+```typescript
+// ❌ 当前：Metadata 容易混淆
+channelMetadata.set({ topic: 'Meeting' })  // 这是元数据还是数据？
+
+// ✅ 改进：Storage 语义清晰
+channelStorage.set('topic', 'Meeting')     // 明确是存储数据
+```
+
+**收益**：
+- 避免术语混淆（Metadata 通常指"关于数据的数据"）
+- 更直白的表达（Storage = 存储）
+
+### 其他重要改进方向
+- 🎯 **简化单项操作** - `storage.get(key)` 比批量操作更常用
+- 🎯 **提升类型安全** - 泛型 Schema 支持
+- 🎯 **增强便利性** - Lock 自动管理（`withLock`），JSON 值支持
 
 ### 建议实施路径
-1. 先实现 **Scoped Metadata API**（最小改动，最大收益）
-2. 然后添加 **Lock 便捷方法**（提升开发体验）
-3. 最后考虑 **泛型和 JSON 支持**（长期优化）
 
-这样既能保持向后兼容，又能逐步提升 API 质量。
+#### 阶段 1：核心架构重构（推荐优先）
+1. ✨ 实现统一的 `Channel` 类
+2. ✨ 重命名 Metadata → Storage
+3. ✅ 添加泛型支持 `Channel<TPresenceState, TStorageSchema>`
+4. ✅ 保留旧 API 作为 deprecated（向后兼容）
+
+#### 阶段 2：API 增强
+5. ✅ 简化单项操作（`storage.get/set/remove`）
+6. ✅ 改进 Lock API（`storage.withLock()`）
+7. ⚠️ 支持 JSON 值（自动序列化）
+
+#### 阶段 3：长期优化
+8. 📌 批量操作策略（partial 模式）
+9. 📌 Storage TTL 支持
+
+### 迁移策略
+- **向后兼容**：保留所有现有 API，标记为 `@deprecated`
+- **逐步迁移**：提供迁移指南和代码示例
+- **主版本升级**：在下一个主版本中移除旧 API（可选）
+
+这样既能进行架构升级，又能保持现有代码正常运行。
