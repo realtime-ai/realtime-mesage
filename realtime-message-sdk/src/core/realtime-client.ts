@@ -7,6 +7,7 @@ import type {
   PresenceChannelOptions,
 } from "../modules/presence/types";
 import { ChannelMetadataClient } from "../modules/metadata/channel-metadata-client";
+import { Channel, type ChannelOptions } from "./channel";
 
 const defaultLogger: Logger = {
   debug: () => {
@@ -23,6 +24,7 @@ export class RealtimeClient {
   private socket: Socket | null = null;
   private logger: Logger;
   private presenceChannels = new Set<PresenceChannel>();
+  private channels = new Map<string, Channel>();
   private eventsBound = false;
   private _metadata: ChannelMetadataClient | null = null;
 
@@ -131,6 +133,16 @@ export class RealtimeClient {
   }
 
   async shutdown(): Promise<void> {
+    // Stop all unified channels
+    for (const channel of this.channels.values()) {
+      try {
+        await channel.dispose();
+      } catch (error) {
+        this.logger.error("Failed to dispose channel", error);
+      }
+    }
+    this.channels.clear();
+
     // Stop all presence channels
     for (const channel of this.presenceChannels) {
       try {
@@ -188,6 +200,77 @@ export class RealtimeClient {
     }
 
     return { channel, response };
+  }
+
+  /**
+   * 获取或创建统一的 Channel 实例
+   *
+   * Channel 是 Presence 和 Storage 的统一入口，每个 channelId 对应一个单例实例
+   *
+   * @template TPresenceState - Presence state 类型
+   * @template TStorageSchema - Storage schema 类型
+   * @param channelId - Channel 唯一标识符
+   * @param options - Channel 选项
+   * @returns Channel 实例
+   *
+   * @example
+   * ```typescript
+   * interface UserState {
+   *   status: 'active' | 'away';
+   *   typing: boolean;
+   * }
+   *
+   * interface RoomStorage {
+   *   topic: string;
+   *   moderator: string;
+   * }
+   *
+   * const room = client.channel<UserState, RoomStorage>('room-1');
+   *
+   * // Presence 操作
+   * await room.presence.join('alice', { status: 'active', typing: false });
+   * await room.presence.updateState({ typing: true });
+   *
+   * // Storage 操作
+   * await room.storage.set('topic', 'Daily Standup');
+   * const topic = await room.storage.get('topic');
+   *
+   * // 便捷方法
+   * await room.join('alice', { status: 'active', typing: false });
+   * await room.set('topic', 'Meeting');
+   * ```
+   */
+  channel<TPresenceState = unknown, TStorageSchema = Record<string, unknown>>(
+    channelId: string,
+    options?: ChannelOptions
+  ): Channel<TPresenceState, TStorageSchema> {
+    if (!this.socket) {
+      throw new Error("Cannot create channel before connection. Call connect() first.");
+    }
+
+    // 返回已存在的实例（单例模式）
+    const existing = this.channels.get(channelId);
+    if (existing) {
+      return existing as Channel<TPresenceState, TStorageSchema>;
+    }
+
+    // 创建新实例
+    const channelOptions: ChannelOptions = {
+      presenceEventName: options?.presenceEventName ?? this.config.presence?.presenceEventName,
+      storageEventName: options?.storageEventName,
+      heartbeatIntervalMs: options?.heartbeatIntervalMs ?? this.config.presence?.heartbeatIntervalMs,
+      logger: options?.logger ?? this.logger,
+    };
+
+    const channel = new Channel<TPresenceState, TStorageSchema>(
+      this.socket,
+      channelId,
+      channelOptions
+    );
+
+    this.channels.set(channelId, channel as Channel);
+
+    return channel;
   }
 
   private setupEventHandlers(): void {
