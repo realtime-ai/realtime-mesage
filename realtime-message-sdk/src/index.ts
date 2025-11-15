@@ -5,7 +5,32 @@ export type {
   Logger,
 } from "./core/types";
 
-// Presence (built-in to RealtimeClient)
+// Unified Channel API (Recommended)
+export {
+  Channel,
+  ChannelPresence,
+  ChannelStorage,
+  StorageError,
+  StorageConflictError,
+  StorageLockError,
+  StorageValidationError,
+} from "./modules/channel";
+export type {
+  StorageOperation,
+  StorageItem,
+  StorageOptions,
+  StorageEntry,
+  StorageResponse,
+  StorageEvent,
+  LockOptions,
+  ChannelPresenceEvents,
+  ChannelStorageEvents,
+  ChannelEvents,
+  PresenceMember,
+} from "./modules/channel";
+
+// Presence (Legacy - use Channel.presence instead)
+/** @deprecated Use Channel.presence instead */
 export { PresenceChannel } from "./modules/presence/presence-channel";
 export type {
   ConnectionStateSnapshot,
@@ -24,7 +49,8 @@ export type {
 } from "./modules/presence/types";
 export type { CustomEmitOptions } from "./modules/presence/presence-channel";
 
-// Metadata
+// Metadata (Legacy - use Channel.storage instead)
+/** @deprecated Use Channel.storage instead */
 export {
   ChannelMetadataClient,
   MetadataError,

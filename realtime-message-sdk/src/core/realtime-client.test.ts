@@ -400,4 +400,199 @@ describe("RealtimeClient", () => {
       consoleErrorSpy.mockRestore();
     });
   });
+
+  describe("Unified Channel API", () => {
+    it("should throw error when creating channel before connection", () => {
+      const config: RealtimeClientConfig = {
+        baseUrl: `http://localhost:${port}`,
+        logger: silentLogger,
+      };
+
+      client = new RealtimeClient(config);
+
+      expect(() => client.channel("room-1")).toThrow(
+        "Cannot create channel before connection"
+      );
+    });
+
+    it("should create a channel with default options", async () => {
+      const config: RealtimeClientConfig = {
+        baseUrl: `http://localhost:${port}`,
+        logger: silentLogger,
+      };
+
+      client = new RealtimeClient(config);
+      await client.connect();
+
+      const channel = client.channel("room-1");
+
+      expect(channel).toBeDefined();
+      expect(channel.getChannelId()).toBe("room-1");
+      expect(channel.getChannelType()).toBe("ROOM");
+      expect(channel.presence).toBeDefined();
+      expect(channel.storage).toBeDefined();
+    });
+
+    it("should create a typed channel with generic parameters", async () => {
+      interface UserState {
+        status: string;
+      }
+
+      interface RoomData {
+        topic: string;
+      }
+
+      const config: RealtimeClientConfig = {
+        baseUrl: `http://localhost:${port}`,
+        logger: silentLogger,
+      };
+
+      client = new RealtimeClient(config);
+      await client.connect();
+
+      const channel = client.channel<UserState, RoomData>("room-2");
+
+      expect(channel).toBeDefined();
+      expect(channel.getChannelId()).toBe("room-2");
+    });
+
+    it("should support custom channel type", async () => {
+      const config: RealtimeClientConfig = {
+        baseUrl: `http://localhost:${port}`,
+        logger: silentLogger,
+      };
+
+      client = new RealtimeClient(config);
+      await client.connect();
+
+      const channel = client.channel("dm-1", {
+        channelType: "DIRECT_MESSAGE",
+      });
+
+      expect(channel.getChannelType()).toBe("DIRECT_MESSAGE");
+    });
+
+    it("should merge global and channel-specific presence options", async () => {
+      const config: RealtimeClientConfig = {
+        baseUrl: `http://localhost:${port}`,
+        presence: {
+          heartbeatIntervalMs: 5000,
+        },
+        logger: silentLogger,
+      };
+
+      client = new RealtimeClient(config);
+      await client.connect();
+
+      const channel = client.channel("room-3", {
+        presenceOptions: {
+          heartbeatIntervalMs: 10000,
+        },
+      });
+
+      expect(channel).toBeDefined();
+    });
+
+    it("should return existing channel instance for same channelId", async () => {
+      const config: RealtimeClientConfig = {
+        baseUrl: `http://localhost:${port}`,
+        logger: silentLogger,
+      };
+
+      client = new RealtimeClient(config);
+      await client.connect();
+
+      const channel1 = client.channel("room-4");
+      const channel2 = client.channel("room-4");
+
+      expect(channel1).toBe(channel2);
+    });
+
+    it("should dispose all channels on shutdown", async () => {
+      const config: RealtimeClientConfig = {
+        baseUrl: `http://localhost:${port}`,
+        logger: silentLogger,
+      };
+
+      io.on("connection", (socket) => {
+        socket.on("presence:join", (payload, ack) => {
+          ack({ ok: true, self: { connId: "test-conn", epoch: 1 }, snapshot: [] });
+        });
+        socket.on("presence:leave", (payload, ack) => {
+          ack?.();
+        });
+      });
+
+      client = new RealtimeClient(config);
+      await client.connect();
+
+      const channel1 = client.channel("room-5");
+      const channel2 = client.channel("room-6");
+
+      const disposeSpy1 = vi.spyOn(channel1, "dispose");
+      const disposeSpy2 = vi.spyOn(channel2, "dispose");
+
+      await client.shutdown();
+
+      expect(disposeSpy1).toHaveBeenCalled();
+      expect(disposeSpy2).toHaveBeenCalled();
+    });
+
+    it("should support convenience methods on channel", async () => {
+      const config: RealtimeClientConfig = {
+        baseUrl: `http://localhost:${port}`,
+        logger: silentLogger,
+      };
+
+      io.on("connection", (socket) => {
+        socket.on("presence:join", (payload, ack) => {
+          ack({ ok: true, self: { connId: "test-conn", epoch: 1 }, snapshot: [] });
+        });
+        socket.on("presence:leave", (payload, ack) => {
+          ack?.();
+        });
+        socket.on("metadata:getChannel", (payload, ack) => {
+          ack({
+            ok: true,
+            timestamp: Date.now(),
+            channelName: payload.channelName,
+            channelType: payload.channelType,
+            totalCount: 0,
+            majorRevision: 1,
+            metadata: {},
+          });
+        });
+        socket.on("metadata:setChannel", (payload, ack) => {
+          ack({
+            ok: true,
+            timestamp: Date.now(),
+            channelName: payload.channelName,
+            channelType: payload.channelType,
+            totalCount: 1,
+            majorRevision: 2,
+            metadata: { topic: { value: payload.data[0].value, revision: 1 } },
+          });
+        });
+      });
+
+      client = new RealtimeClient(config);
+      await client.connect();
+
+      const channel = client.channel("room-7");
+
+      // Test convenience join
+      const joinResponse = await channel.join("alice", { status: "active" });
+      expect(joinResponse.ok).toBe(true);
+
+      // Test convenience set
+      await channel.set("topic", "Meeting");
+
+      // Test convenience get
+      const topic = await channel.get("topic");
+      expect(topic).toBeNull(); // Will be null because mock getChannel returns empty
+
+      // Test convenience leave
+      await channel.leave();
+    });
+  });
 });
