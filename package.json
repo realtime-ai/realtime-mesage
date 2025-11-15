@@ -1,53 +1,42 @@
 {
-  "name": "realtime-mesage-monorepo",
+  "name": "realtime-mesage",
   "version": "1.0.0",
   "private": true,
-  "description": "Realtime messaging infrastructure with modular SDK",
+  "description": "Realtime presence service built with Socket.IO and Redis",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/realtime-ai/realtime-message.git"
+  },
   "workspaces": [
-    "packages/*"
+    "backend",
+    "realtime-message-sdk"
   ],
   "scripts": {
-    "build": "pnpm -r build",
-    "build:server": "pnpm --filter server build",
-    "build:sdk": "pnpm --filter sdk build",
-
-    "dev": "pnpm --filter server dev",
-    "dev:sdk": "pnpm --filter sdk dev",
-    "start": "pnpm --filter server start",
-
-    "test": "pnpm -r test",
-    "test:server": "pnpm --filter server test",
-    "test:sdk": "pnpm --filter sdk test",
-    "test:e2e": "pnpm --filter server test:e2e",
-    "test:all": "pnpm test && pnpm test:e2e",
-    "test:watch": "pnpm -r test:watch",
-
-    "benchmark:presence": "pnpm --filter server benchmark:presence",
-    "benchmark:sdk": "pnpm --filter server benchmark:sdk",
-    "benchmark:validate": "pnpm --filter server benchmark:validate",
-    "benchmark:ci": "pnpm --filter server benchmark:ci",
-
-    "sdk:demo": "pnpm --filter sdk demo",
-
-    "clean": "pnpm -r clean && rm -rf node_modules",
-    "typecheck": "pnpm -r typecheck",
-    "lint": "pnpm -r lint",
-    "format": "prettier --write \"packages/**/src/**/*.ts\"",
-
-    "publish:sdk": "pnpm --filter sdk publish --access public",
-
-    "prepare": "husky"
+    "build": "npm run build --workspace backend",
+    "build:sdk": "npm run build --workspace realtime-message-sdk",
+    "dev": "npm run dev --workspace backend",
+    "start": "npm run start --workspace backend",
+    "test": "npm run test --workspace backend && npm run test --workspace realtime-message-sdk",
+    "test:server": "npm run test --workspace backend",
+    "test:sdk": "npm run test --workspace realtime-message-sdk",
+    "test:e2e": "npm run test:e2e --workspace backend",
+    "test:all": "npm run test --workspace backend && npm run test --workspace realtime-message-sdk && npm run test:e2e --workspace backend",
+    "test:watch": "npm run test:watch --workspace backend",
+    "prepare": "husky",
+    "benchmark:presence": "npm run benchmark:presence --workspace backend",
+    "benchmark:sdk": "npm run benchmark:sdk --workspace backend",
+    "benchmark:validate": "npm run benchmark:validate --workspace backend",
+    "benchmark:ci": "npm run benchmark:ci --workspace backend",
+    "sdk:demo": "npm run demo --workspace realtime-message-sdk"
   },
+  "keywords": [
+    "socket.io",
+    "redis",
+    "presence"
+  ],
+  "author": "",
+  "license": "MIT",
   "devDependencies": {
-    "@types/node": "^24.5.0",
-    "husky": "^9.1.7",
-    "prettier": "^3.3.0",
-    "typescript": "^5.9.2",
-    "vitest": "^3.2.4"
-  },
-  "engines": {
-    "node": ">=18.0.0",
-    "pnpm": ">=8.0.0"
-  },
-  "packageManager": "pnpm@8.15.0"
+    "husky": "^9.1.7"
+  }
 }

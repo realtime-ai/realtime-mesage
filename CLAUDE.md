@@ -4,73 +4,65 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A modular realtime message infrastructure built on Socket.IO and Redis. The project provides core messaging capabilities with built-in presence orchestration as a pluggable module.
+A focused realtime presence service built on Socket.IO and Redis. Instead of a pluggable module framework, the backend exposes a single helper that wires presence join/heartbeat/leave handlers onto an existing Socket.IO server. The browser SDK pairs with this backend to manage heartbeats, reconnection, and custom events.
 
 **Core Philosophy:**
-- Provide realtime infrastructure (connections, routing, state management)
-- Presence is a built-in module (not the primary focus)
-- Extensible through pluggable modules
-- Direct access to Socket.IO and Redis (no over-abstraction)
+- Provide a production-ready presence primitive (connections, state, fencing) with minimal ceremony
+- Keep direct access to Socket.IO and Redis for advanced use cases
+- Avoid over-abstraction so applications can extend behaviour alongside the provided handlers
 
-**Repository Structure (Monorepo):**
-- **[packages/server/src/core/](packages/server/src/core/)** - Core framework (RealtimeServer, module system)
-- **[packages/server/src/modules/presence/](packages/server/src/modules/presence/)** - Built-in presence module
-- **[packages/server/examples/](packages/server/examples/)** - Custom module examples
-- **[packages/sdk/](packages/sdk/)** - Browser SDK (@realtime-mesage/sdk)
-- **[packages/server/benchmark/](packages/server/benchmark/)** - Load-testing harness
+**Repository Structure:**
+- **[backend/src/presence/](backend/src/presence/)** - Presence service implementation (Redis logic, socket handlers)
+- **[backend/src/presence-server.ts](backend/src/presence-server.ts)** - `initPresence` bootstrap helper
+- **[backend/examples/](backend/examples/)** - Sample presence server wiring
+- **[realtime-message-sdk/](realtime-message-sdk/)** - Browser SDK (`RealtimeClient`, `PresenceChannel`)
+- **[backend/benchmark/](backend/benchmark/)** - Load-testing harness
 
 ## Common Commands
 
 ### Development & Build
 ```bash
-pnpm dev             # Run server in development mode (ts-node)
-pnpm build           # Compile all packages (server + SDK)
-pnpm build:server    # Compile server TypeScript to packages/server/dist/
-pnpm build:sdk       # Compile SDK TypeScript to packages/sdk/dist/
-pnpm start           # Run compiled server from dist/
+npm run dev          # Run server in development mode (ts-node)
+npm run build        # Compile server TypeScript to dist/
+npm run build:sdk    # Compile SDK TypeScript to realtime-message-sdk/dist/
+npm start            # Run compiled server from dist/
 ```
 
 ### Testing & Benchmarking
 ```bash
-pnpm test                       # Run all test suites (Vitest)
-pnpm test:server                # Run server tests only
-pnpm test:sdk                   # Run SDK tests only
-pnpm test:e2e                   # Run E2E integration tests (requires Redis)
-pnpm benchmark:presence         # Launch load test (100 rooms × 2 users)
-pnpm sdk:demo                   # Serve SDK demo at http://localhost:4173
+npm test                        # Run test suite (Vitest)
+npm run benchmark:presence      # Launch load test (100 rooms × 2 users)
+npm run sdk:demo                # Serve SDK demo at http://localhost:4173
 ```
 
 ## Architecture
 
-### Core Framework
+### Presence Server
 
-**RealtimeServer** ([packages/server/src/core/realtime-server.ts](packages/server/src/core/realtime-server.ts:1)) manages module registration and lifecycle:
+**Bootstrap Helper:** [`initPresence`](backend/src/presence-server.ts) accepts a Socket.IO server and Redis client, wires all handlers, and returns a disposable runtime:
 
 ```typescript
-const server = new RealtimeServer({ io, redis });
-server.use(createPresenceModule(options));  // Register modules
-await server.start();
+const presence = await initPresence({
+  io,
+  redis,
+  ttlMs: 30_000,
+  reaperIntervalMs: 3_000,
+  reaperLookbackMs: 60_000,
+});
+
+// Optional cleanup (tests, graceful shutdown)
+await presence.dispose();
 ```
 
-**Module Interface** ([packages/server/src/core/types.ts](packages/server/src/core/types.ts:1)):
-```typescript
-interface RealtimeModule {
-  name: string;
-  register(context: ModuleContext): void | Promise<void>;
-  onConnection?(socket: Socket, context: ModuleContext): void;
-  onShutdown?(): void | Promise<void>;
-}
+Internally it:
+- Instantiates a `PresenceService`
+- Creates a Redis pub/sub bridge to broadcast events across nodes
+- Registers socket handlers for join/heartbeat/leave/disconnect
+- Starts the background reaper loop
 
-interface ModuleContext {
-  io: Server;      // Direct Socket.IO access
-  redis: Redis;    // Direct Redis access
-  logger: Logger;
-}
-```
+### Presence Implementation
 
-### Presence Module
-
-**Location:** [packages/server/src/modules/presence/](packages/server/src/modules/presence/)
+**Location:** [backend/src/presence/](backend/src/presence/)
 
 Provides authoritative presence orchestration with:
 - **Epoch-based fencing**: Monotonically increasing `epoch` prevents race conditions from stale heartbeats
@@ -79,11 +71,10 @@ Provides authoritative presence orchestration with:
 - **Pub/sub bridge**: Broadcasts presence events via Redis to all Socket.IO nodes
 
 **Files:**
-- [service.ts](packages/server/src/modules/presence/service.ts:1) - Core business logic (formerly PresenceService)
-- [handlers.ts](packages/server/src/modules/presence/handlers.ts:1) - Socket.IO event handlers (join/heartbeat/leave)
-- [index.ts](packages/server/src/modules/presence/index.ts:1) - Module factory (`createPresenceModule`)
-- [keys.ts](packages/server/src/modules/presence/keys.ts:1) - Redis key patterns
-- [types.ts](packages/server/src/modules/presence/types.ts:1) - Type definitions
+- [service.ts](backend/src/presence/service.ts) - Redis data model, joins, heartbeats, reaper, bridge
+- [handlers.ts](backend/src/presence/handlers.ts) - Socket.IO event handlers
+- [keys.ts](backend/src/presence/keys.ts) - Redis key helpers
+- [types.ts](backend/src/presence/types.ts) - Shared types for presence events and metadata
 
 **Redis Data Model:**
 - `prs:conn:<connId>` - Connection hash (userId, roomId, state, epoch, last_seen_ms) with TTL
@@ -94,72 +85,27 @@ Provides authoritative presence orchestration with:
 - `prs:user:<userId>:conns` - User's connections across rooms
 - `prs:{room:<roomId>}:events` - Pub/sub channel for presence events
 
-**Usage:**
-```typescript
-server.use(createPresenceModule({
-  ttlMs: 30_000,
-  reaperIntervalMs: 3_000,
-  reaperLookbackMs: 60_000,
-}));
-```
-
 ### Server Entry Point
 
-**[packages/server/src/server.ts](packages/server/src/server.ts:1)** (59 lines):
-1. Initialize Socket.IO + Redis
-2. Create RealtimeServer and register modules
-3. Start server
-4. Handle graceful shutdown
-
-**Key Difference from Pre-Refactor:**
-- **Before:** 188 lines with all presence logic inline
-- **After:** 59 lines, all presence logic in module
+**[src/server.ts](src/server.ts)** demonstrates wiring:
+1. Initialize Socket.IO + Redis (+ adapter)
+2. Call `initPresence(...)`
+3. Start HTTP server
+4. On shutdown, call `presence.dispose()` and close Redis/socket resources
 
 ### SDK Client
 
-**RealtimeClient** ([packages/sdk/src/core/realtime-client.ts](packages/sdk/src/core/realtime-client.ts)) provides a high-level browser API:
+**RealtimeClient** ([realtime-message-sdk/src/core/realtime-client.ts](realtime-message-sdk/src/core/realtime-client.ts)) is the primary entry point:
 
-- **PresenceChannel** ([packages/sdk/src/modules/presence/presence-channel.ts](packages/sdk/src/modules/presence/presence-channel.ts)) encapsulates a single room's lifecycle:
-  - Auto-schedules heartbeats every `heartbeatIntervalMs` (default 10s).
-  - Tracks missed heartbeats and fires errors when threshold exceeded.
-  - Merges client hooks with internal EventEmitter for `connect`, `disconnect`, `reconnect`, `presenceEvent`, etc.
-  - Supports custom app events via overloaded `emit()` with optional ack/timeout.
-
-### Creating Custom Modules
-
-See [packages/server/examples/custom-chat-module/](packages/server/examples/custom-chat-module/) for a complete example.
-
-**Basic Pattern:**
-```typescript
-export function createMyModule(options): RealtimeModule {
-  return {
-    name: "my-module",
-
-    register(context) {
-      context.io.on("connection", (socket) => {
-        socket.on("my:event", async (payload, ack) => {
-          await context.redis.set("key", "value");
-          context.io.to(payload.roomId).emit("my:broadcast", data);
-          ack?.({ ok: true });
-        });
-      });
-    },
-
-    async onShutdown() {
-      // Cleanup resources
-    },
-  };
-}
-```
-
-**Register it:**
-```typescript
-server.use(createMyModule(options));
-```
+- Wraps Socket.IO client creation (`socket.io-client`)
+- Handles auth query resolution, reconnection, and channel teardown on shutdown
+- Exposes convenience helpers:
+  - `createPresenceChannel()` / `joinRoom()` for room lifecycle
+  - `PresenceChannel` ([realtime-message-sdk/src/modules/presence/presence-channel.ts](realtime-message-sdk/src/modules/presence/presence-channel.ts)) with automatic heartbeats, `emit` helpers, and presence events
 
 ## Environment Variables
 
-See [packages/server/src/config.ts](packages/server/src/config.ts) for defaults. Key variables:
+See [src/config.ts](src/config.ts) for defaults. Key variables:
 
 - `PORT`: HTTP server port (default: 3000)
 - `REDIS_URL`: Redis connection string (default: redis://localhost:6379)
@@ -169,7 +115,7 @@ See [packages/server/src/config.ts](packages/server/src/config.ts) for defaults.
 
 ## Testing
 
-Tests are located in [packages/server/src/modules/presence/service.test.ts](packages/server/src/modules/presence/service.test.ts:1) and use `ioredis-mock`.
+Tests are located in [src/presence/service.test.ts](backend/src/presence/service.test.ts) and use `ioredis-mock`.
 
 **Run specific test:**
 ```bash
@@ -178,47 +124,24 @@ npx vitest run -t "test name pattern"
 
 ## Key Constraints
 
-### Presence Module
-- **Epoch fencing:** Always send latest epoch in heartbeats; server rejects stale epochs
-- **TTL refresh:** Heartbeat within `PRESENCE_TTL_MS` or connection expires
-- **Single room per socket:** Each socket can only join one presence room
-
-### Module System
-- **No Transport Abstraction:** Modules use Socket.IO directly (`context.io`)
-- **No Storage Abstraction:** Modules use Redis directly (`context.redis`)
-- **Register Before Start:** Modules must be registered before calling `server.start()`
+### Presence Runtime
+- **Epoch fencing:** Always send latest epoch in heartbeats; server rejects stale epochs.
+- **TTL refresh:** Heartbeats must occur within `PRESENCE_TTL_MS` or the connection expires.
+- **Single room per socket:** Each socket can only participate in one presence room at a time (tracked on `socket.data`).
+- **Graceful shutdown:** Call `dispose()` before terminating the process to stop the reaper and unsubscribe Redis listeners (tests / graceful restarts).
 
 ## Migration Notes
 
-### If Upgrading from Pre-Refactor Version
+### If Upgrading from the Module-Based Version
 
-**Import Changes:**
-```typescript
-// Before
-import { PresenceService } from "realtime-mesage/presence/presence-service";
-
-// After
-import { PresenceService, createPresenceModule } from "realtime-mesage";
-```
-
-**Server Setup:**
-```typescript
-// Before
-const presenceService = new PresenceService(redis, options);
-await presenceService.createSocketBridge(io);
-presenceService.startReaper();
-io.on("connection", (socket) => { /* inline handlers */ });
-
-// After
-const server = new RealtimeServer({ io, redis });
-server.use(createPresenceModule(options));
-await server.start();  // Handles bridge + reaper + handlers
-```
+- Replace `RealtimeServer` + `createPresenceModule` usage with a single call to `initPresence`.
+- Drop any custom modules registered through `server.use(...)`; instead, attach additional socket listeners directly to the `io` instance alongside `initPresence`.
+- If you previously relied on `server.shutdown()`, switch to storing the runtime returned by `initPresence` and call `runtime.dispose()` during teardown.
 
 ## Development Guidelines
 
-1. **Module Independence:** Each module should be self-contained and not depend on other modules
-2. **Direct API Usage:** Use `context.io` and `context.redis` directly; avoid creating abstraction layers
-3. **Error Handling:** Always wrap event handlers in try/catch and send proper acknowledgements
-4. **Cleanup:** Implement `onShutdown()` to clean up timers, subscribers, etc.
-5. **Testing:** Test modules by mocking `ModuleContext` (see presence tests for examples)
+1. **Keep Epoch Monotonic:** Whenever you surface new endpoints that touch presence state, ensure incoming epochs never decrease.
+2. **Reuse `socket.data`:** Stick to `socket.data.presenceRoomId` / `presenceUserId` so auxiliary handlers can rely on them.
+3. **Try/Catch Socket Handlers:** Presence handlers wrap Redis calls in try/catch; follow the same pattern for custom events to avoid killing the connection.
+4. **Clean Shutdowns:** Always dispose the runtime in tests or custom servers to release Redis subscribers and timers.
+5. **Testing:** Use the helpers in `backend/src/test-utils` (mock Redis, mock logger) when adding new presence scenarios.
