@@ -8,6 +8,9 @@ import type {
   PresenceEventBridge,
   PresenceEventBridgeOptions,
 } from "./presence/types";
+import { HeartbeatBatcher } from "./presence/heartbeat-batcher";
+import { LuaHeartbeatExecutor } from "./presence/lua-heartbeat-executor";
+import { TransactionalMetadataWrapper } from "./presence/metadata-transactional";
 
 export interface PresenceLogger {
   debug(message: string, meta?: unknown): void;
@@ -18,6 +21,50 @@ export interface PresenceLogger {
 
 export interface PresenceBridgeOptions extends PresenceEventBridgeOptions {}
 
+/**
+ * 性能优化选项
+ */
+export interface PresenceOptimizationOptions {
+  /**
+   * 启用心跳批处理
+   * 将短时间内的多个心跳请求合并为一次 Redis Pipeline 操作
+   * @default false
+   */
+  enableHeartbeatBatching?: boolean;
+
+  /**
+   * 批处理窗口时间（毫秒）
+   * @default 50
+   */
+  heartbeatBatchWindowMs?: number;
+
+  /**
+   * 最大批次大小
+   * @default 100
+   */
+  heartbeatMaxBatchSize?: number;
+
+  /**
+   * 启用 Lua 脚本优化心跳
+   * 将心跳操作原子化，减少网络往返次数
+   * @default false
+   */
+  enableLuaHeartbeat?: boolean;
+
+  /**
+   * 启用 Metadata 事务性操作（WATCH/MULTI）
+   * 使用 Redis 事务保证原子性，避免应用层竞态
+   * @default false
+   */
+  enableTransactionalMetadata?: boolean;
+
+  /**
+   * Metadata 事务最大重试次数
+   * @default 5
+   */
+  metadataMaxRetries?: number;
+}
+
 export interface PresenceInitOptions {
   io: Server;
   redis: Redis;
@@ -26,10 +73,26 @@ export interface PresenceInitOptions {
   reaperLookbackMs?: number;
   logger?: PresenceLogger;
   bridge?: PresenceBridgeOptions;
+  /**
+   * 性能优化选项
+   */
+  optimizations?: PresenceOptimizationOptions;
 }
 
 export interface PresenceRuntime {
   dispose(): Promise<void>;
+  /**
+   * 获取心跳批处理器（如果启用）
+   */
+  getHeartbeatBatcher(): HeartbeatBatcher | null;
+  /**
+   * 获取 Lua 心跳执行器（如果启用）
+   */
+  getLuaHeartbeatExecutor(): LuaHeartbeatExecutor | null;
+  /**
+   * 获取事务性 Metadata 包装器（如果启用）
+   */
+  getTransactionalMetadata(): TransactionalMetadataWrapper | null;
 }
 
 const DEFAULT_TTL_MS = 30_000;
@@ -67,17 +130,58 @@ export async function initPresence(options: PresenceInitOptions): Promise<Presen
   let bridge: PresenceEventBridge | null = null;
   let disposed = false;
 
+  // 初始化优化组件
+  const opts = options.optimizations ?? {};
+  let heartbeatBatcher: HeartbeatBatcher | null = null;
+  let luaHeartbeatExecutor: LuaHeartbeatExecutor | null = null;
+  let transactionalMetadata: TransactionalMetadataWrapper | null = null;
+
+  if (opts.enableHeartbeatBatching) {
+    heartbeatBatcher = new HeartbeatBatcher(options.redis, {
+      batchWindowMs: opts.heartbeatBatchWindowMs,
+      maxBatchSize: opts.heartbeatMaxBatchSize,
+      ttlMs,
+      logger,
+    });
+    logger.info("Heartbeat batching enabled", {
+      batchWindowMs: opts.heartbeatBatchWindowMs ?? 50,
+      maxBatchSize: opts.heartbeatMaxBatchSize ?? 100,
+    });
+  }
+
+  if (opts.enableLuaHeartbeat) {
+    luaHeartbeatExecutor = new LuaHeartbeatExecutor(options.redis, {
+      ttlMs,
+      logger,
+    });
+    await luaHeartbeatExecutor.warmup();
+    logger.info("Lua heartbeat optimization enabled");
+  }
+
+  if (opts.enableTransactionalMetadata) {
+    transactionalMetadata = new TransactionalMetadataWrapper(options.redis, {
+      maxRetries: opts.metadataMaxRetries,
+      logger,
+    });
+    logger.info("Transactional metadata enabled", {
+      maxRetries: opts.metadataMaxRetries ?? 5,
+    });
+  }
+
   try {
     bridge = await service.createSocketBridge(options.io, options.bridge);
     const handlerContext: PresenceHandlerContext = {
       io: options.io,
       redis: options.redis,
       logger,
+      heartbeatBatcher,
+      luaHeartbeatExecutor,
+      transactionalMetadata,
     };
     registerPresenceHandlers(handlerContext, service);
     service.startReaper();
   } catch (error) {
-    await safeStop(service, bridge, logger);
+    await safeStop(service, bridge, heartbeatBatcher, logger);
     throw error;
   }
 
@@ -87,7 +191,16 @@ export async function initPresence(options: PresenceInitOptions): Promise<Presen
         return;
       }
       disposed = true;
-      await safeStop(service, bridge, logger);
+      await safeStop(service, bridge, heartbeatBatcher, logger);
+    },
+    getHeartbeatBatcher(): HeartbeatBatcher | null {
+      return heartbeatBatcher;
+    },
+    getLuaHeartbeatExecutor(): LuaHeartbeatExecutor | null {
+      return luaHeartbeatExecutor;
+    },
+    getTransactionalMetadata(): TransactionalMetadataWrapper | null {
+      return transactionalMetadata;
     },
   };
 }
@@ -95,6 +208,7 @@ export async function initPresence(options: PresenceInitOptions): Promise<Presen
 async function safeStop(
   service: PresenceService,
   bridge: PresenceEventBridge | null,
+  heartbeatBatcher: HeartbeatBatcher | null,
   logger: PresenceLogger
 ): Promise<void> {
   if (bridge) {
@@ -102,6 +216,14 @@ async function safeStop(
       await bridge.stop();
     } catch (error) {
       logger.error("Failed to stop presence bridge", error);
+    }
+  }
+
+  if (heartbeatBatcher) {
+    try {
+      heartbeatBatcher.dispose();
+    } catch (error) {
+      logger.error("Failed to dispose heartbeat batcher", error);
     }
   }
 
