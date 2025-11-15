@@ -43,6 +43,7 @@ export interface ChannelMetadataEvent {
 
 export interface ChannelMetadataEventMap {
   metadataEvent: ChannelMetadataEvent;
+  [key: string]: unknown; // Index signature for EventEmitter compatibility
 }
 
 export interface ChannelMetadataMutationParams {

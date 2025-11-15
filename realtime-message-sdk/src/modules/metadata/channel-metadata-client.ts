@@ -174,8 +174,8 @@ export class ChannelMetadataClient extends EventEmitter<ChannelMetadataEventMap>
     if ("data" in ack && ack.data) {
       return ack.data;
     }
-    const { ok: _ok, ...inline } = ack;
-    return inline;
+    const { ok: _ok, ...inline } = ack as MetadataAckSuccessInline;
+    return inline as ChannelMetadataResponse;
   }
 
   private mapError(message: string, code?: string): Error {

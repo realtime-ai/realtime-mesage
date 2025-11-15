@@ -7,6 +7,7 @@ import type {
   PresenceChannelOptions,
 } from "../modules/presence/types";
 import { ChannelMetadataClient } from "../modules/metadata/channel-metadata-client";
+import { Channel } from "../modules/channel/channel";
 
 const defaultLogger: Logger = {
   debug: () => {
@@ -23,6 +24,7 @@ export class RealtimeClient {
   private socket: Socket | null = null;
   private logger: Logger;
   private presenceChannels = new Set<PresenceChannel>();
+  private channels = new Map<string, Channel>();
   private eventsBound = false;
   private _metadata: ChannelMetadataClient | null = null;
 
@@ -30,6 +32,65 @@ export class RealtimeClient {
     this.logger = config.logger ?? defaultLogger;
   }
 
+  /**
+   * Get the unified channel API (recommended)
+   * @param channelId - The channel identifier (e.g., 'room-1')
+   * @returns A Channel instance with presence and storage sub-modules
+   * @example
+   * ```typescript
+   * const room = client.channel<UserState, RoomStorage>('room-1');
+   * await room.presence.join('alice', { status: 'active' });
+   * await room.storage.set('topic', 'Meeting');
+   * ```
+   */
+  channel<TPresenceState = unknown, TStorageSchema = Record<string, unknown>>(
+    channelId: string,
+    options?: {
+      channelType?: string;
+      presenceOptions?: PresenceChannelOptions;
+    }
+  ): Channel<TPresenceState, TStorageSchema> {
+    if (!this.socket) {
+      throw new Error("Cannot create channel before connection. Call connect() first.");
+    }
+
+    // Return existing channel if already created
+    const existing = this.channels.get(channelId);
+    if (existing) {
+      return existing as Channel<TPresenceState, TStorageSchema>;
+    }
+
+    const channel = new Channel<TPresenceState, TStorageSchema>(
+      this.socket,
+      channelId,
+      this.logger,
+      {
+        channelType: options?.channelType,
+        presenceOptions: {
+          ...this.config.presence,
+          ...options?.presenceOptions,
+        },
+      }
+    );
+
+    this.channels.set(channelId, channel as Channel<unknown, Record<string, unknown>>);
+    return channel;
+  }
+
+  /**
+   * Access the global metadata client (deprecated)
+   * @deprecated Use channel().storage instead for channel-scoped storage operations
+   * @example
+   * ```typescript
+   * // Old way (deprecated)
+   * const metadata = client.metadata;
+   * await metadata.setChannelMetadata({ channelName: 'room-1', ... });
+   *
+   * // New way (recommended)
+   * const room = client.channel('room-1');
+   * await room.storage.set('topic', 'Meeting');
+   * ```
+   */
   get metadata(): ChannelMetadataClient {
     if (!this._metadata) {
       throw new Error("Cannot access metadata before connection. Call connect() first.");
@@ -131,7 +192,18 @@ export class RealtimeClient {
   }
 
   async shutdown(): Promise<void> {
-    // Stop all presence channels
+    // Dispose all unified channels
+    for (const channel of this.channels.values()) {
+      try {
+        await channel.presence.stop();
+        channel.dispose();
+      } catch (error) {
+        this.logger.error("Failed to stop channel", error);
+      }
+    }
+    this.channels.clear();
+
+    // Stop all legacy presence channels
     for (const channel of this.presenceChannels) {
       try {
         await channel.stop();
@@ -154,7 +226,18 @@ export class RealtimeClient {
   }
 
   /**
-   * Create a presence channel with custom options
+   * Create a presence channel with custom options (deprecated)
+   * @deprecated Use channel().presence instead for a unified API
+   * @example
+   * ```typescript
+   * // Old way (deprecated)
+   * const presenceChannel = client.createPresenceChannel();
+   * await presenceChannel.join({ roomId: 'room-1', userId: 'alice' });
+   *
+   * // New way (recommended)
+   * const room = client.channel('room-1');
+   * await room.presence.join('alice', { status: 'active' });
+   * ```
    */
   createPresenceChannel(options?: PresenceChannelOptions): PresenceChannel {
     if (!this.socket) {
@@ -173,7 +256,17 @@ export class RealtimeClient {
   }
 
   /**
-   * Join a room with presence (convenience method)
+   * Join a room with presence (deprecated convenience method)
+   * @deprecated Use channel().join() instead
+   * @example
+   * ```typescript
+   * // Old way (deprecated)
+   * const { channel } = await client.joinRoom({ roomId: 'room-1', userId: 'alice' });
+   *
+   * // New way (recommended)
+   * const room = client.channel('room-1');
+   * await room.join('alice', { status: 'active' });
+   * ```
    */
   async joinRoom(
     params: PresenceJoinParams,
