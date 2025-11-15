@@ -1,15 +1,14 @@
 # Realtime Message Infrastructure
 
-A modular realtime message infrastructure built on Socket.IO and Redis. Provides core messaging capabilities with built-in presence orchestration, designed for extensibility through pluggable modules.
+A streamlined realtime presence stack built on Socket.IO and Redis. The backend exposes a single helper to wire presence into an existing Socket.IO server, and the browser SDK offers batteries-included room management with automatic heartbeats.
 
 ## Features
 
-- **Modular Architecture**: Pluggable module system for extending functionality
-- **Built-in Presence**: Production-ready presence orchestration with epoch-based fencing and TTL expiry
-- **Direct API Access**: Modules have direct access to Socket.IO and Redis without abstraction layers
-- **Multi-node Support**: Redis adapter keeps multiple Socket.IO nodes in sync
-- **TypeScript SDK**: Browser client (`realtime-message-sdk/`) with automatic heartbeats and reconnection
-- **Load Testing**: Benchmark harness to validate scale assumptions
+- **Single Call Bootstrap**: `initPresence({ io, redis })` wires join/heartbeat/leave handlers for you
+- **Battle-tested Presence**: Epoch fencing, TTL enforcement, and automatic reaping of stale connections
+- **Horizontal Scaling**: Redis pub/sub bridge keeps Socket.IO clusters in sync
+- **TypeScript SDK**: Lightweight browser client with heartbeats, reconnection, and helpers for custom events
+- **Benchmark Harness**: Load-testing scripts to validate behaviour under pressure
 
 ## Repository Layout
 
@@ -19,7 +18,7 @@ A modular realtime message infrastructure built on Socket.IO and Redis. Provides
 │   ├── dist/                # Compiled server output
 │   ├── benchmark/           # Load testing scripts
 │   ├── docs/                # Backend documentation
-│   ├── examples/            # Custom module examples
+│   ├── examples/            # Presence server samples
 │   ├── tsconfig.json        # Backend TypeScript config
 │   └── vitest.config.mjs    # Backend test config
 ├── realtime-message-sdk/    # Browser SDK
@@ -71,11 +70,24 @@ npm start
 npm test
 ```
 
-## Extending with Custom Modules
+## Quick Start (Backend)
 
-The modular architecture allows you to add custom features (chat, notifications, analytics, etc.) without modifying core code.
+```ts
+import { createServer } from "http";
+import { Server } from "socket.io";
+import { Redis } from "ioredis";
+import { initPresence } from "@YOUR_SCOPE/realtime-mesage";
 
-See `backend/examples/custom-chat-module/` for a complete working example, or refer to [CLAUDE.md](./CLAUDE.md#creating-custom-modules) for detailed module development guide.
+const httpServer = createServer();
+const io = new Server(httpServer);
+const redis = new Redis("redis://localhost:6379");
+
+await initPresence({ io, redis });
+
+httpServer.listen(3000);
+```
+
+Presence cleanup is handled automatically when the Node.js process exits. For explicit shutdown (tests, graceful restarts) call `dispose()` on the returned runtime.
 
 ## Socket.IO Protocol
 
@@ -91,7 +103,7 @@ Clients should keep the latest `epoch` returned by `presence:join` and send it w
 
 ## Web SDK & Demo
 
-The `realtime-message-sdk/` package exposes a browser-friendly `RealtimeMessageClient` with:
+The `realtime-message-sdk/` package exposes a browser-friendly `RealtimeClient` with:
 
 - Automatic heartbeat scheduling and fencing-aware acknowledgements
 - `emit`/`on` helpers that mirror Socket.IO's API for custom application events

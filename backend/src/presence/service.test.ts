@@ -266,3 +266,4 @@ describe("PresenceService", () => {
     expect(metadata).toMatchObject({ epoch: secondEpoch });
   });
 });
+

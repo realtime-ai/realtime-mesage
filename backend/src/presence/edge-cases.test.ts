@@ -1,7 +1,7 @@
 import type { Redis as RedisClient } from "ioredis";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { PresenceService } from "./service";
-import { createMockRedis, sleep, createMockLogger } from "../../test-utils";
+import { createMockRedis, sleep, createMockLogger } from "../test-utils";
 import { connKey, roomConnectionsKey, roomMembersKey } from "./keys";
 
 describe("Presence Edge Cases", () => {
@@ -557,3 +557,4 @@ describe("Presence Edge Cases", () => {
     });
   });
 });
+

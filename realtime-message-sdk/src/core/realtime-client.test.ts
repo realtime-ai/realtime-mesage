@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import { RealtimeClient } from "./realtime-client";
-import type { ClientModule, RealtimeClientConfig } from "./types";
+import type { RealtimeClientConfig } from "./types";
 import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import type { AddressInfo } from "net";
+import { MetadataConflictError } from "../modules/metadata/channel-metadata-client";
 
 describe("RealtimeClient", () => {
   let httpServer: any;
@@ -17,6 +18,21 @@ describe("RealtimeClient", () => {
     info: vi.fn(),
     warn: vi.fn(),
     error: vi.fn(),
+  };
+
+  const waitFor = async (
+    condition: () => boolean,
+    timeoutMs = 1_000,
+    intervalMs = 20
+  ): Promise<void> => {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (condition()) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+    throw new Error("Condition not met within timeout");
   };
 
   beforeAll(async () => {
@@ -59,6 +75,8 @@ describe("RealtimeClient", () => {
       }
       client = null as any;
     }
+
+    io.removeAllListeners();
   });
 
   afterAll(async () => {
@@ -150,163 +168,6 @@ describe("RealtimeClient", () => {
       await client.disconnect();
 
       expect(client.isConnected()).toBe(false);
-    });
-  });
-
-  describe("Module Registration", () => {
-    it("should register modules before connection", () => {
-      const config: RealtimeClientConfig = {
-        baseUrl: `http://localhost:${port}`,
-        logger: silentLogger,
-      };
-
-      client = new RealtimeClient(config);
-
-      const module: ClientModule = {
-        name: "test-module",
-        onConnected: vi.fn(),
-      };
-
-      expect(() => client.use(module)).not.toThrow();
-    });
-
-    it("should throw error when registering after connection", async () => {
-      const config: RealtimeClientConfig = {
-        baseUrl: `http://localhost:${port}`,
-        logger: silentLogger,
-      };
-
-      client = new RealtimeClient(config);
-      await client.connect();
-
-      const module: ClientModule = {
-        name: "test-module",
-        onConnected: vi.fn(),
-      };
-
-      expect(() => client.use(module)).toThrow(
-        'Cannot register module "test-module" after connection is established'
-      );
-    });
-
-    it("should call module onConnected on connect", async () => {
-      const onConnectedFn = vi.fn();
-
-      const module: ClientModule = {
-        name: "test-module",
-        onConnected: onConnectedFn,
-      };
-
-      const config: RealtimeClientConfig = {
-        baseUrl: `http://localhost:${port}`,
-        logger: silentLogger,
-      };
-
-      client = new RealtimeClient(config);
-      client.use(module);
-      await client.connect();
-
-      expect(onConnectedFn).toHaveBeenCalledOnce();
-      expect(onConnectedFn).toHaveBeenCalledWith(
-        expect.objectContaining({
-          socket: expect.any(Object),
-          logger: expect.any(Object),
-          config,
-        })
-      );
-    });
-
-    it("should call module onDisconnected on disconnect", async () => {
-      const onDisconnectedFn = vi.fn();
-
-      const module: ClientModule = {
-        name: "test-module",
-        onDisconnected: onDisconnectedFn,
-      };
-
-      const config: RealtimeClientConfig = {
-        baseUrl: `http://localhost:${port}`,
-        logger: silentLogger,
-      };
-
-      client = new RealtimeClient(config);
-      client.use(module);
-      await client.connect();
-      await client.disconnect();
-
-      expect(onDisconnectedFn).toHaveBeenCalled();
-    });
-
-    it("should call module onShutdown on shutdown", async () => {
-      const onShutdownFn = vi.fn();
-
-      const module: ClientModule = {
-        name: "test-module",
-        onShutdown: onShutdownFn,
-      };
-
-      const config: RealtimeClientConfig = {
-        baseUrl: `http://localhost:${port}`,
-        logger: silentLogger,
-      };
-
-      client = new RealtimeClient(config);
-      client.use(module);
-      await client.connect();
-      await client.shutdown();
-
-      expect(onShutdownFn).toHaveBeenCalled();
-    });
-
-    it("should handle module initialization errors", async () => {
-      const module: ClientModule = {
-        name: "failing-module",
-        onConnected: async () => {
-          throw new Error("Module init failed");
-        },
-      };
-
-      const config: RealtimeClientConfig = {
-        baseUrl: `http://localhost:${port}`,
-        logger: silentLogger,
-      };
-
-      client = new RealtimeClient(config);
-      client.use(module);
-
-      await expect(client.connect()).rejects.toThrow("Module init failed");
-      expect(client.isConnected()).toBe(false);
-    });
-
-    it("should handle module disconnect errors gracefully", async () => {
-      const logger = {
-        debug: vi.fn(),
-        info: vi.fn(),
-        warn: vi.fn(),
-        error: vi.fn(),
-      };
-
-      const module: ClientModule = {
-        name: "failing-module",
-        onDisconnected: async () => {
-          throw new Error("Disconnect failed");
-        },
-      };
-
-      const config: RealtimeClientConfig = {
-        baseUrl: `http://localhost:${port}`,
-        logger,
-      };
-
-      client = new RealtimeClient(config);
-      client.use(module);
-      await client.connect();
-      await client.disconnect();
-
-      expect(logger.error).toHaveBeenCalledWith(
-        "Failed to disconnect module: failing-module",
-        expect.any(Error)
-      );
     });
   });
 

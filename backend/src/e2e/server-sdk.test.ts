@@ -13,20 +13,16 @@ import { Server as SocketIOServer } from "socket.io";
 import { createServer, type Server as HTTPServer } from "http";
 import type { AddressInfo } from "net";
 import Redis from "ioredis";
-import { RealtimeServer } from "../core/realtime-server";
-import { createPresenceModule } from "../modules/presence";
-<<<<<<<< HEAD:packages/server/src/e2e/server-sdk.test.ts
-import { RealtimeClient } from "@realtime-mesage/sdk";
-========
+import { initPresence } from "../presence-server";
+import type { PresenceRuntime } from "../presence-server";
 import { RealtimeClient } from "../../../realtime-message-sdk/src/core/realtime-client";
->>>>>>>> d7d91d4 (refactor: split backend and sdk workspaces):backend/src/e2e/server-sdk.test.ts
 import { createMockLogger } from "../test-utils";
 
 describe.skipIf(!process.env.REDIS_RUNNING)("E2E: Server + SDK Integration", () => {
   let httpServer: HTTPServer;
   let io: SocketIOServer;
   let redis: Redis;
-  let realtimeServer: RealtimeServer;
+  let presenceRuntime: PresenceRuntime | null = null;
   let port: number;
   let clients: RealtimeClient[] = [];
 
@@ -59,22 +55,14 @@ describe.skipIf(!process.env.REDIS_RUNNING)("E2E: Server + SDK Integration", () 
       });
     });
 
-    // Setup RealtimeServer with Presence module
-    realtimeServer = new RealtimeServer({
+    presenceRuntime = await initPresence({
       io,
       redis,
+      ttlMs: 5_000,
+      reaperIntervalMs: 1_000,
+      reaperLookbackMs: 10_000,
       logger: createMockLogger(),
     });
-
-    realtimeServer.use(
-      createPresenceModule({
-        ttlMs: 5_000,
-        reaperIntervalMs: 1_000,
-        reaperLookbackMs: 10_000,
-      })
-    );
-
-    await realtimeServer.start();
   });
 
   afterAll(async () => {
@@ -83,7 +71,10 @@ describe.skipIf(!process.env.REDIS_RUNNING)("E2E: Server + SDK Integration", () 
     }
     clients = [];
 
-    await realtimeServer.shutdown();
+    if (presenceRuntime) {
+      await presenceRuntime.dispose();
+      presenceRuntime = null;
+    }
     await new Promise<void>((resolve, reject) => {
       io.close((err) => (err ? reject(err) : resolve()));
     });

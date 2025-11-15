@@ -1,13 +1,12 @@
 # RTM Web SDK
 
-A lightweight, modular JavaScript SDK for building real-time messaging applications. Built on Socket.IO with built-in presence support and extensible module architecture.
+A lightweight JavaScript SDK for building real-time presence experiences on top of Socket.IO.
 
 ## Features
 
 - **Built-in Presence**: Automatic room-based presence with heartbeats and state synchronization
-- **Simple API**: No module registration needed for basic presence - works out of the box
+- **Simple API**: Connect, join a room, and start receiving presence events in a few lines
 - **TypeScript-First**: Full type safety with reusable contracts shared with the server
-- **Extensible**: Add custom modules for domain-specific features (chat, notifications, etc.)
 - **Flexible Events**: Generic `emit`/`on` helpers with Socket.IO-style acknowledgements
 - **Lifecycle Hooks**: Configurable callbacks for connection, disconnection, and reconnection events
 
@@ -277,196 +276,6 @@ socket.emit("user:profile", { userId: "123" }, (profile) => {
 });
 ```
 
-## Creating Custom Modules
-
-You can create custom modules for domain-specific features like chat, notifications, or analytics.
-
-### Example: Chat Module
-
-```ts
-import type { ClientModule, ClientModuleContext } from "realtime-message-sdk";
-
-export interface ChatMessage {
-  msgId: string;
-  roomId: string;
-  userId: string;
-  message: string;
-  ts: number;
-}
-
-export interface ChatModuleAPI {
-  sendMessage(roomId: string, message: string): Promise<{ msgId: string }>;
-  onMessage(handler: (msg: ChatMessage) => void): () => void;
-  loadHistory(roomId: string, limit?: number): Promise<ChatMessage[]>;
-}
-
-export function createChatModule(): ClientModule & { api: ChatModuleAPI } {
-  let context: ClientModuleContext | null = null;
-  const messageHandlers = new Set<(msg: ChatMessage) => void>();
-
-  const api: ChatModuleAPI = {
-    async sendMessage(roomId: string, message: string): Promise<{ msgId: string }> {
-      if (!context) throw new Error("Chat module not initialized");
-
-      return new Promise((resolve, reject) => {
-        context.socket.emit(
-          "chat:send",
-          { roomId, message },
-          (response: { ok: boolean; msgId?: string; error?: string }) => {
-            if (response.ok && response.msgId) {
-              resolve({ msgId: response.msgId });
-            } else {
-              reject(new Error(response.error || "Failed to send message"));
-            }
-          }
-        );
-      });
-    },
-
-    onMessage(handler: (msg: ChatMessage) => void): () => void {
-      messageHandlers.add(handler);
-      return () => messageHandlers.delete(handler);
-    },
-
-    async loadHistory(roomId: string, limit = 50): Promise<ChatMessage[]> {
-      if (!context) throw new Error("Chat module not initialized");
-
-      return new Promise((resolve, reject) => {
-        context.socket.emit(
-          "chat:history",
-          { roomId, limit },
-          (response: { ok: boolean; messages?: ChatMessage[]; error?: string }) => {
-            if (response.ok && response.messages) {
-              resolve(response.messages);
-            } else {
-              reject(new Error(response.error || "Failed to load history"));
-            }
-          }
-        );
-      });
-    },
-  };
-
-  return {
-    name: "chat",
-    api,
-
-    onConnected(ctx: ClientModuleContext): void {
-      context = ctx;
-      ctx.logger.info("Chat module connected");
-
-      ctx.socket.on("chat:message", (msg: ChatMessage) => {
-        messageHandlers.forEach(handler => handler(msg));
-      });
-    },
-
-    onDisconnected(): void {
-      context = null;
-    },
-
-    onShutdown(): void {
-      messageHandlers.clear();
-    },
-  };
-}
-```
-
-### Usage
-
-```ts
-import { RealtimeClient } from "realtime-message-sdk";
-import { createChatModule } from "./chat-module";
-
-const client = new RealtimeClient({ baseUrl: "https://rtm.yourdomain.com" });
-
-// Register custom chat module
-const chatModule = createChatModule();
-client.use(chatModule);
-
-await client.connect();
-
-// Listen for messages
-const unsubscribe = chatModule.api.onMessage((msg) => {
-  console.log(`${msg.userId}: ${msg.message}`);
-});
-
-// Send message
-const { msgId } = await chatModule.api.sendMessage("room-123", "Hello!");
-
-// Load history
-const history = await chatModule.api.loadHistory("room-123", 100);
-```
-
-## Complete Example: Presence + Custom Messaging
-
-```ts
-import { RealtimeClient } from "realtime-message-sdk";
-
-// Setup client with presence defaults
-const client = new RealtimeClient({
-  baseUrl: "https://rtm.yourdomain.com",
-  authProvider: () => ({ token: getAuthToken() }),
-  presence: {
-    heartbeatIntervalMs: 5000, // Send heartbeats every 5s
-  },
-});
-
-// Connect
-await client.connect();
-
-// Join room with presence
-const { channel } = await client.joinRoom({
-  roomId: "collab-room-42",
-  userId: "user-123",
-  state: { cursor: null, selection: null },
-});
-
-// Track presence
-channel.on("presenceEvent", (event) => {
-  if (event.type === "join") {
-    addUserToUI(event.userId, event.state);
-  } else if (event.type === "leave") {
-    removeUserFromUI(event.userId);
-  } else if (event.type === "update") {
-    updateUserInUI(event.userId, event.state);
-  }
-});
-
-// Update presence on user action
-document.addEventListener("mousemove", async (e) => {
-  await channel.updateState({ cursor: { x: e.clientX, y: e.clientY } });
-});
-
-// Custom messaging: Send chat messages
-channel.on("chat:message", ({ userId, text, ts }) => {
-  appendMessageToChat(userId, text, ts);
-});
-
-channel.emit("chat:message", {
-  text: "Hello everyone!",
-  ts: Date.now()
-});
-
-// Custom messaging: Reactions
-channel.on("reaction:add", ({ userId, emoji, targetId }) => {
-  addReactionToElement(targetId, emoji, userId);
-});
-
-const ackResponse = await channel.emit(
-  "reaction:add",
-  { emoji: "👍", targetId: "msg-456" },
-  { ack: true, timeoutMs: 3000 }
-);
-
-if (ackResponse.ok) {
-  console.log("Reaction added successfully");
-}
-
-// Cleanup
-await channel.leave();
-await client.disconnect();
-```
-
 ## TypeScript Support
 
 The SDK is written in TypeScript and provides full type definitions:
@@ -475,8 +284,6 @@ The SDK is written in TypeScript and provides full type definitions:
 import type {
   // Core types
   RealtimeClientConfig,
-  ClientModule,
-  ClientModuleContext,
   Logger,
 
   // Presence types
@@ -610,8 +417,6 @@ realtime-message-sdk/
         presence-channel.ts    # Presence channel implementation
         types.ts               # Presence types
     index.ts                   # Main SDK exports
-  examples/
-    chat-client-module/        # Example chat module implementation
   demo/
     index.html                 # Interactive browser demo
   tsconfig.json                # TypeScript configuration
@@ -620,6 +425,6 @@ realtime-message-sdk/
 ## Next Steps
 
 - Integrate the SDK build artifacts into your distribution pipeline
-- Create custom modules for your domain-specific features (chat, notifications, analytics, etc.)
+- Extend business-specific events directly via Socket.IO (chat, notifications, analytics, etc.)
 - Add automated tests (e.g., Vitest + Socket.IO mock server)
-- Explore the [server-side module system](../README.md) for building corresponding server features
+- Attach custom server-side Socket.IO handlers alongside `initPresence` to keep presence and app logic aligned

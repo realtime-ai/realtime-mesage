@@ -1,7 +1,7 @@
 import type { Redis as RedisClient } from "ioredis";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { PresenceService } from "./service";
-import { createMockRedis, waitFor, createMockLogger } from "../../test-utils";
+import { createMockRedis, waitFor, createMockLogger } from "../test-utils";
 import {
   connKey,
   roomConnectionsKey,
@@ -507,3 +507,4 @@ describe("Presence Integration Tests", () => {
     });
   });
 });
+

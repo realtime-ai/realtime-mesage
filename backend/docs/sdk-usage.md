@@ -261,126 +261,6 @@ socket.emit("user:profile", { userId: "123" }, (profile) => {
 });
 ```
 
-## 创建自定义模块
-
-可以为特定业务功能创建自定义模块（如聊天、通知、分析等）。
-
-### 示例：聊天模块
-
-```ts
-import type { ClientModule, ClientModuleContext } from "realtime-message-sdk";
-
-export interface ChatMessage {
-  msgId: string;
-  roomId: string;
-  userId: string;
-  message: string;
-  ts: number;
-}
-
-export interface ChatModuleAPI {
-  sendMessage(roomId: string, message: string): Promise<{ msgId: string }>;
-  onMessage(handler: (msg: ChatMessage) => void): () => void;
-  loadHistory(roomId: string, limit?: number): Promise<ChatMessage[]>;
-}
-
-export function createChatModule(): ClientModule & { api: ChatModuleAPI } {
-  let context: ClientModuleContext | null = null;
-  const messageHandlers = new Set<(msg: ChatMessage) => void>();
-
-  const api: ChatModuleAPI = {
-    async sendMessage(roomId: string, message: string) {
-      if (!context) throw new Error("Chat 模块未初始化");
-
-      return new Promise((resolve, reject) => {
-        context.socket.emit(
-          "chat:send",
-          { roomId, message },
-          (response: { ok: boolean; msgId?: string; error?: string }) => {
-            if (response.ok && response.msgId) {
-              resolve({ msgId: response.msgId });
-            } else {
-              reject(new Error(response.error || "发送失败"));
-            }
-          }
-        );
-      });
-    },
-
-    onMessage(handler: (msg: ChatMessage) => void) {
-      messageHandlers.add(handler);
-      return () => messageHandlers.delete(handler);
-    },
-
-    async loadHistory(roomId: string, limit = 50) {
-      if (!context) throw new Error("Chat 模块未初始化");
-
-      return new Promise((resolve, reject) => {
-        context.socket.emit(
-          "chat:history",
-          { roomId, limit },
-          (response: { ok: boolean; messages?: ChatMessage[]; error?: string }) => {
-            if (response.ok && response.messages) {
-              resolve(response.messages);
-            } else {
-              reject(new Error(response.error || "加载失败"));
-            }
-          }
-        );
-      });
-    },
-  };
-
-  return {
-    name: "chat",
-    api,
-
-    onConnected(ctx: ClientModuleContext) {
-      context = ctx;
-      ctx.logger.info("Chat 模块已连接");
-
-      ctx.socket.on("chat:message", (msg: ChatMessage) => {
-        messageHandlers.forEach(handler => handler(msg));
-      });
-    },
-
-    onDisconnected() {
-      context = null;
-    },
-
-    onShutdown() {
-      messageHandlers.clear();
-    },
-  };
-}
-```
-
-### 使用自定义模块
-
-```ts
-import { RealtimeClient } from "realtime-message-sdk";
-import { createChatModule } from "./chat-module";
-
-const client = new RealtimeClient({ baseUrl: "https://rtm.yourdomain.com" });
-
-// 注册自定义聊天模块
-const chatModule = createChatModule();
-client.use(chatModule);
-
-await client.connect();
-
-// 监听消息
-const unsubscribe = chatModule.api.onMessage((msg) => {
-  console.log(`${msg.userId}: ${msg.message}`);
-});
-
-// 发送消息
-const { msgId } = await chatModule.api.sendMessage("room-123", "你好!");
-
-// 加载历史
-const history = await chatModule.api.loadHistory("room-123", 100);
-```
-
 ## 完整示例：Presence + 自定义消息
 
 ```ts
@@ -459,8 +339,6 @@ SDK 使用 TypeScript 编写，提供完整的类型定义：
 import type {
   // 核心类型
   RealtimeClientConfig,
-  ClientModule,
-  ClientModuleContext,
   Logger,
 
   // Presence 类型
@@ -594,8 +472,6 @@ realtime-message-sdk/
         presence-channel.ts    # Presence Channel 实现
         types.ts               # Presence 类型
     index.ts                   # SDK 主导出
-  examples/
-    chat-client-module/        # 聊天模块示例
   demo/
     index.html                 # 浏览器交互式 Demo
   tsconfig.json                # TypeScript 配置
@@ -604,6 +480,6 @@ realtime-message-sdk/
 ## 下一步
 
 - 将 SDK 构建产物集成到发布流程
-- 为业务需求创建自定义模块（聊天、通知、分析等）
+- 基于 Socket.IO 扩展业务事件（聊天、通知、分析等）
 - 添加自动化测试（如 Vitest + Socket.IO mock server）
-- 探索[服务端模块系统](../CLAUDE.md)构建对应的服务端功能
+- 在服务端配合 `initPresence` 直接挂载自定义事件，复用 Presence 能力

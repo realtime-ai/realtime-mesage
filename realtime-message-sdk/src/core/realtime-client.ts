@@ -1,10 +1,5 @@
 import { io, type Socket } from "socket.io-client";
-import type {
-  ClientModule,
-  ClientModuleContext,
-  RealtimeClientConfig,
-  Logger,
-} from "./types";
+import type { RealtimeClientConfig, Logger } from "./types";
 import { PresenceChannel } from "../modules/presence/presence-channel";
 import type {
   PresenceJoinParams,
@@ -25,22 +20,12 @@ const defaultLogger: Logger = {
 
 export class RealtimeClient {
   private socket: Socket | null = null;
-  private modules: ClientModule[] = [];
   private logger: Logger;
   private presenceChannels = new Set<PresenceChannel>();
+  private eventsBound = false;
 
   constructor(private readonly config: RealtimeClientConfig) {
     this.logger = config.logger ?? defaultLogger;
-  }
-
-  use(module: ClientModule): void {
-    if (this.socket) {
-      throw new Error(
-        `Cannot register module "${module.name}" after connection is established`
-      );
-    }
-    this.modules.push(module);
-    this.logger.debug(`Module registered: ${module.name}`);
   }
 
   async connect(): Promise<void> {
@@ -73,11 +58,9 @@ export class RealtimeClient {
         this.logger.info("Socket connected", { id: socket.id });
 
         try {
-          await this.initializeModules();
           this.setupEventHandlers();
           resolve();
         } catch (error) {
-          this.logger.error("Failed to initialize modules", error);
           socket.disconnect();
           reject(error);
         }
@@ -99,14 +82,6 @@ export class RealtimeClient {
   async disconnect(): Promise<void> {
     if (!this.socket) {
       return;
-    }
-
-    for (const module of this.modules) {
-      try {
-        await module.onDisconnected?.();
-      } catch (error) {
-        this.logger.error(`Failed to disconnect module: ${module.name}`, error);
-      }
     }
 
     const socket = this.socket;
@@ -131,6 +106,8 @@ export class RealtimeClient {
     } else {
       socket.disconnect();
     }
+
+    this.eventsBound = false;
   }
 
   async shutdown(): Promise<void> {
@@ -143,14 +120,6 @@ export class RealtimeClient {
       }
     }
     this.presenceChannels.clear();
-
-    for (const module of this.modules) {
-      try {
-        await module.onShutdown?.();
-      } catch (error) {
-        this.logger.error(`Failed to shutdown module: ${module.name}`, error);
-      }
-    }
     await this.disconnect();
   }
 
@@ -199,49 +168,19 @@ export class RealtimeClient {
     return { channel, response };
   }
 
-  private async initializeModules(): Promise<void> {
-    if (!this.socket) {
-      throw new Error("Socket not initialized");
-    }
-
-    const context: ClientModuleContext = {
-      socket: this.socket,
-      logger: this.logger,
-      config: this.config,
-    };
-
-    for (const module of this.modules) {
-      try {
-        await module.onConnected?.(context);
-        this.logger.debug(`Module initialized: ${module.name}`);
-      } catch (error) {
-        this.logger.error(`Failed to initialize module: ${module.name}`, error);
-        throw error;
-      }
-    }
-  }
-
   private setupEventHandlers(): void {
-    if (!this.socket) return;
+    if (!this.socket || this.eventsBound) {
+      return;
+    }
+    this.eventsBound = true;
 
     this.socket.on("disconnect", async (reason: string) => {
       this.logger.warn("Socket disconnected", { reason });
-
-      for (const module of this.modules) {
-        try {
-          await module.onDisconnected?.();
-        } catch (error) {
-          this.logger.error(`Module disconnect handler failed: ${module.name}`, error);
-        }
-      }
+      this.eventsBound = false;
     });
 
     this.socket.on("reconnect", (attempt: number) => {
       this.logger.info("Socket reconnected", { attempt });
-
-      this.initializeModules().catch((error) => {
-        this.logger.error("Failed to reinitialize modules after reconnect", error);
-      });
     });
 
     this.socket.on("reconnect_attempt", (attempt: number) => {

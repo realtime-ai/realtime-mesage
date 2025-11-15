@@ -1,15 +1,8 @@
-export {
-  initPresence,
-} from "./presence-server";
-export type {
-  PresenceInitOptions,
-  PresenceRuntime,
-  PresenceBridgeOptions,
-  PresenceLogger,
-} from "./presence-server";
-
-export { PresenceService } from "./presence";
-export type { PresenceServiceOptions } from "./presence";
+export { PresenceService } from "./service";
+export type { PresenceServiceOptions } from "./service";
+export { registerPresenceHandlers } from "./handlers";
+export type { PresenceHandlerContext } from "./handlers";
+export * as presenceKeys from "./keys";
 export type {
   PresenceEventPayload,
   PresenceEventType,
@@ -32,5 +25,5 @@ export type {
   ChannelMetadataEventPayload,
   ChannelMetadataEventHandler,
   ChannelMetadataEntry,
-} from "./presence";
-export { presenceKeys } from "./presence";
+} from "./types";
+

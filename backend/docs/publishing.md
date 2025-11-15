@@ -110,11 +110,18 @@ npm install @YOUR_USERNAME/realtime-mesage@1.2.3
 **Usage:**
 
 ```typescript
-import { RealtimeServer, createPresenceModule } from '@YOUR_USERNAME/realtime-mesage';
+import { initPresence } from '@YOUR_USERNAME/realtime-mesage';
 
-const server = new RealtimeServer({ io, redis });
-server.use(createPresenceModule());
-await server.start();
+const presence = await initPresence({
+  io,
+  redis,
+  ttlMs: 30_000,
+  reaperIntervalMs: 3_000,
+  reaperLookbackMs: 60_000,
+});
+
+// later, on shutdown
+await presence.dispose();
 ```
 
 ### Install SDK Package

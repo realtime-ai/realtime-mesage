@@ -4,8 +4,8 @@ import { createAdapter } from "@socket.io/redis-adapter";
 import { Redis } from "ioredis";
 
 import { config } from "./config";
-import { RealtimeServer } from "./core/realtime-server";
-import { createPresenceModule } from "./modules/presence";
+import { initPresence } from "./presence-server";
+import type { PresenceRuntime } from "./presence-server";
 
 const httpServer = createServer();
 const io = new Server(httpServer, {
@@ -20,20 +20,22 @@ const redis = new Redis(config.redisUrl);
 
 io.adapter(createAdapter(pubClient, subClient));
 
-const server = new RealtimeServer({ io, redis });
+let presenceRuntime: PresenceRuntime | null = null;
 
-server.use(
-  createPresenceModule({
-    ttlMs: config.presenceTtlMs,
-    reaperIntervalMs: config.reaperIntervalMs,
-    reaperLookbackMs: config.reaperLookbackMs,
+initPresence({
+  io,
+  redis,
+  ttlMs: config.presenceTtlMs,
+  reaperIntervalMs: config.reaperIntervalMs,
+  reaperLookbackMs: config.reaperLookbackMs,
+})
+  .then((runtime) => {
+    presenceRuntime = runtime;
   })
-);
-
-server.start().catch((error) => {
-  console.error("Failed to start realtime server", error);
-  process.exit(1);
-});
+  .catch((error) => {
+    console.error("Failed to start presence services", error);
+    process.exit(1);
+  });
 
 const port = config.port;
 httpServer.listen(port, () => {
@@ -50,7 +52,10 @@ process.on("SIGTERM", async () => {
 
 async function shutdown() {
   console.log("Shutting down realtime message server...");
-  await server.shutdown();
+  if (presenceRuntime) {
+    await presenceRuntime.dispose();
+    presenceRuntime = null;
+  }
   await Promise.all([pubClient.quit(), subClient.quit(), redis.quit()]);
   httpServer.close(() => {
     process.exit(0);

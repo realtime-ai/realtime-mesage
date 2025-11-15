@@ -2,8 +2,6 @@
 export { RealtimeClient } from "./core/realtime-client";
 export type {
   RealtimeClientConfig,
-  ClientModule,
-  ClientModuleContext,
   Logger,
 } from "./core/types";
 
@@ -25,3 +23,25 @@ export type {
   PresenceChannelOptions,
 } from "./modules/presence/types";
 export type { CustomEmitOptions } from "./modules/presence/presence-channel";
+
+// Metadata
+export {
+  ChannelMetadataClient,
+  MetadataError,
+  MetadataConflictError,
+  MetadataLockError,
+  MetadataValidationError,
+} from "./modules/metadata/channel-metadata-client";
+export type {
+  ChannelMetadataOperation,
+  ChannelMetadataItem,
+  ChannelMetadataOptions,
+  ChannelMetadataEntry,
+  ChannelMetadataRecord,
+  ChannelMetadataResponse,
+  ChannelMetadataEvent,
+  ChannelMetadataEventMap,
+  ChannelMetadataMutationParams,
+  ChannelMetadataRemovalParams,
+  ChannelMetadataGetParams,
+} from "./modules/metadata/types";
