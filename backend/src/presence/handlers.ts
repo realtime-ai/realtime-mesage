@@ -8,11 +8,17 @@ import type {
   ChannelMetadataResponse,
   PresenceSnapshotEntry,
 } from "./types";
+import type { HeartbeatBatcher } from "./heartbeat-batcher";
+import type { LuaHeartbeatExecutor } from "./lua-heartbeat-executor";
+import type { TransactionalMetadataWrapper } from "./metadata-transactional";
 
 export interface PresenceHandlerContext {
   io: Server;
   redis: Redis;
   logger: Pick<Console, "debug" | "info" | "warn" | "error">;
+  heartbeatBatcher?: HeartbeatBatcher | null;
+  luaHeartbeatExecutor?: LuaHeartbeatExecutor | null;
+  transactionalMetadata?: TransactionalMetadataWrapper | null;
 }
 
 const JoinSchema = z.object({
@@ -166,11 +172,38 @@ export function registerPresenceHandlers(
     socket.on("presence:heartbeat", async (raw: unknown, ack?: HeartbeatAck) => {
       try {
         const payload = HeartbeatSchema.parse(raw ?? {});
-        const changed = await service.heartbeat({
+        const heartbeatOptions = {
           connId: socket.id,
           patchState: payload.patchState,
           epoch: payload.epoch,
-        });
+        };
+
+        let changed: boolean;
+
+        // 优先使用 Lua 脚本优化
+        if (context.luaHeartbeatExecutor) {
+          changed = await context.luaHeartbeatExecutor.heartbeat(heartbeatOptions);
+          const epoch = await context.luaHeartbeatExecutor.getEpoch(socket.id);
+          const response: Parameters<HeartbeatAck>[0] = epoch !== undefined
+            ? { ok: true, changed, epoch }
+            : { ok: true, changed };
+          ack?.(response);
+          return;
+        }
+
+        // 次选使用批处理
+        if (context.heartbeatBatcher) {
+          changed = await context.heartbeatBatcher.heartbeat(heartbeatOptions);
+          const epochRaw = await context.redis.hget(connKey(socket.id), "epoch");
+          const response: Parameters<HeartbeatAck>[0] = epochRaw
+            ? { ok: true, changed, epoch: Number(epochRaw) }
+            : { ok: true, changed };
+          ack?.(response);
+          return;
+        }
+
+        // 默认使用原有逻辑
+        changed = await service.heartbeat(heartbeatOptions);
         const epochRaw = await context.redis.hget(connKey(socket.id), "epoch");
         const response: Parameters<HeartbeatAck>[0] = epochRaw
           ? { ok: true, changed, epoch: Number(epochRaw) }
@@ -200,10 +233,16 @@ export function registerPresenceHandlers(
     socket.on("metadata:setChannel", async (raw: unknown, ack?: MetadataAck) => {
       try {
         const payload = MetadataSetSchema.parse(raw ?? {});
-        const response = await service.setChannelMetadata({
+        const params = {
           ...payload,
           actorUserId: socket.data.presenceUserId,
-        });
+        };
+
+        // 使用事务性 Metadata（如果启用）
+        const response = context.transactionalMetadata
+          ? await context.transactionalMetadata.setChannelMetadata(params)
+          : await service.setChannelMetadata(params);
+
         respondMetadataSuccess(ack, response);
       } catch (error) {
         respondMetadataError(ack, error, context.logger);
@@ -213,10 +252,16 @@ export function registerPresenceHandlers(
     socket.on("metadata:updateChannel", async (raw: unknown, ack?: MetadataAck) => {
       try {
         const payload = MetadataUpdateSchema.parse(raw ?? {});
-        const response = await service.updateChannelMetadata({
+        const params = {
           ...payload,
           actorUserId: socket.data.presenceUserId,
-        });
+        };
+
+        // 使用事务性 Metadata（如果启用）
+        const response = context.transactionalMetadata
+          ? await context.transactionalMetadata.updateChannelMetadata(params)
+          : await service.updateChannelMetadata(params);
+
         respondMetadataSuccess(ack, response);
       } catch (error) {
         respondMetadataError(ack, error, context.logger);
@@ -226,10 +271,16 @@ export function registerPresenceHandlers(
     socket.on("metadata:removeChannel", async (raw: unknown, ack?: MetadataAck) => {
       try {
         const payload = MetadataRemoveSchema.parse(raw ?? {});
-        const response = await service.removeChannelMetadata({
+        const params = {
           ...payload,
           actorUserId: socket.data.presenceUserId,
-        });
+        };
+
+        // 使用事务性 Metadata（如果启用）
+        const response = context.transactionalMetadata
+          ? await context.transactionalMetadata.removeChannelMetadata(params)
+          : await service.removeChannelMetadata(params);
+
         respondMetadataSuccess(ack, response);
       } catch (error) {
         respondMetadataError(ack, error, context.logger);

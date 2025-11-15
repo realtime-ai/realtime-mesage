@@ -6,6 +6,7 @@ export type {
   PresenceRuntime,
   PresenceBridgeOptions,
   PresenceLogger,
+  PresenceOptimizationOptions,
 } from "./presence-server";
 
 export { PresenceService } from "./presence";

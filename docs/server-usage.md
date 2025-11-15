@@ -162,10 +162,56 @@ const metadata = await service.getChannelMetadata({
 - `npm run benchmark:sdk`：从客户端角度施压，验证心跳间隔与 ack 超时配置。
 - `npm run test:e2e`：位于 `backend/src/e2e/` 的 Vitest 套件，包含元数据与 Presence 的端到端测试。
 
+## 性能优化（可选）
+
+### 启用优化特性
+
+从 v1.1.0 开始，支持三项性能优化特性：
+
+```typescript
+const presence = await initPresence({
+  io,
+  redis,
+  optimizations: {
+    // 心跳批处理：提升 50-70% 吞吐量
+    enableHeartbeatBatching: true,
+    heartbeatBatchWindowMs: 50,
+    heartbeatMaxBatchSize: 100,
+
+    // Lua 脚本：降低 60-80% 延迟
+    enableLuaHeartbeat: true,
+
+    // 事务性 Metadata：消除并发竞态
+    enableTransactionalMetadata: true,
+    metadataMaxRetries: 5
+  }
+});
+```
+
+### 推荐配置
+
+**高并发场景（100+ 连接）：**
+```typescript
+optimizations: {
+  enableHeartbeatBatching: true,
+  enableTransactionalMetadata: true
+}
+```
+
+**低延迟场景（< 10ms）：**
+```typescript
+optimizations: {
+  enableLuaHeartbeat: true,
+  enableTransactionalMetadata: true
+}
+```
+
+详见 [性能优化文档](./performance-optimizations.md)。
+
 ## 常见问题
 
 - **无法连接 Redis**：确认 `REDIS_URL` 可被所有进程访问，必要时开启 TLS 并在连接串中添加 `?tls=true`。
 - **Presence 状态不同步**：检查 `presence.event` 是否被意外重命名；集群部署需保证所有进程都调用 `initPresence`。
 - **心跳提前过期**：适当调大 `PRESENCE_TTL_MS`，并确保客户端心跳间隔 `< ttlMs`；同步调整 `PRESENCE_REAPER_LOOKBACK_MS`。
-- **Metadata 冲突频繁**：为写请求携带最新 `majorRevision` 与条目 `revision`，或在串行写场景中使用 `lockName`。
+- **Metadata 冲突频繁**：为写请求携带最新 `majorRevision` 与条目 `revision`，或在串行写场景中使用 `lockName`。启用 `enableTransactionalMetadata` 可自动处理冲突重试。
 
