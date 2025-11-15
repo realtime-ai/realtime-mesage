@@ -1,0 +1,84 @@
+{
+  "dashboard": {
+    "title": "Realtime Presence Service",
+    "tags": ["presence", "realtime", "socket.io"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 0,
+    "refresh": "10s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Active Rooms",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "presence_rooms_active",
+            "legendFormat": "Active Rooms"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Operations per Second",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(presence_operation_total[1m])",
+            "legendFormat": "{{operation}}"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Operation Latency (p95)",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(presence_operation_duration_bucket[5m]))",
+            "legendFormat": "{{operation}} p95"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Error Rate",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(presence_error_total[1m])",
+            "legendFormat": "{{operation}}"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Redis Command Duration",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(redis_command_duration_bucket[5m]))",
+            "legendFormat": "{{command}} p95"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Heartbeat Latency",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(presence_heartbeat_latency_bucket[5m]))",
+            "legendFormat": "Heartbeat p95"
+          }
+        ]
+      }
+    ]
+  }
+}
