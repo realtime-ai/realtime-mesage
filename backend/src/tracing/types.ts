@@ -2,45 +2,50 @@ import type { Span, Context } from "@opentelemetry/api";
 
 /**
  * Tracing configuration options
+ *
+ * All options are optional with smart defaults.
+ * Most users can just call initTracing() without any config.
  */
 export interface TracingConfig {
   /**
    * Service name for tracing
-   * @default "realtime-presence-service"
+   * @default process.env.OTEL_SERVICE_NAME || "realtime-presence-service"
    */
   serviceName?: string;
 
   /**
    * Service version
+   * @default process.env.npm_package_version || "1.0.0"
    */
   version?: string;
 
   /**
    * Environment (development, staging, production)
+   * @default process.env.NODE_ENV || "development"
    */
   environment?: string;
 
   /**
    * Enable tracing
-   * @default true
+   * @default process.env.OTEL_ENABLED !== "false" (enabled by default)
    */
   enabled?: boolean;
 
   /**
    * Sampling rate (0.0 to 1.0)
-   * @default 1.0 (100% sampling)
+   * @default development: 1.0 (100%), production: 0.1 (10%)
    */
   samplingRate?: number;
 
   /**
    * OTLP exporter endpoint
-   * @default "http://localhost:4318"
+   * @default process.env.OTEL_EXPORTER_OTLP_ENDPOINT || "http://localhost:4318"
    */
   otlpEndpoint?: string;
 
   /**
    * Export to console for debugging
-   * @default false
+   * @default true in development, false in production
    */
   consoleExport?: boolean;
 

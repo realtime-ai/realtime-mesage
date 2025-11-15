@@ -28,7 +28,17 @@ let sdk: NodeSDK | null = null;
 let isInitialized = false;
 
 /**
- * Initialize OpenTelemetry tracing and metrics
+ * Initialize OpenTelemetry tracing and metrics with smart defaults
+ *
+ * @example
+ * // Minimal setup - just enable tracing
+ * initTracing();
+ *
+ * @example
+ * // Production setup with custom endpoint
+ * initTracing({
+ *   otlpEndpoint: "http://your-collector:4318"
+ * });
  */
 export function initTracing(config: TracingConfig = {}): void {
   if (isInitialized) {
@@ -36,14 +46,17 @@ export function initTracing(config: TracingConfig = {}): void {
     return;
   }
 
+  // Smart defaults with environment variable fallbacks
+  const environment = config.environment || process.env.NODE_ENV || "development";
+  const isDevelopment = environment === "development";
+
   const {
-    serviceName = "realtime-presence-service",
-    version = "1.0.0",
-    environment = process.env.NODE_ENV || "development",
-    enabled = true,
-    samplingRate = 1.0,
+    serviceName = process.env.OTEL_SERVICE_NAME || "realtime-presence-service",
+    version = process.env.npm_package_version || "1.0.0",
+    enabled = process.env.OTEL_ENABLED !== "false", // Enabled by default, disable with OTEL_ENABLED=false
+    samplingRate = Number(process.env.OTEL_SAMPLING_RATE) || (isDevelopment ? 1.0 : 0.1),
     otlpEndpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || "http://localhost:4318",
-    consoleExport = false,
+    consoleExport = isDevelopment, // Auto-enable console export in development
     enableMetrics = true,
     metricsExportIntervalMs = 60000,
     enableRedisInstrumentation = true,

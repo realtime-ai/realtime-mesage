@@ -17,18 +17,12 @@ import { createMetrics } from "../src/tracing/metrics";
 import { initPresence } from "../src/presence-server";
 import type { PresenceRuntime } from "../src/presence-server";
 
-// Configure tracing
+// ✨ Minimal tracing setup - all defaults are auto-configured!
+// Just call initTracing() with no config, or customize as needed
 initTracing({
-  serviceName: "realtime-presence-service",
-  version: "1.0.0",
-  environment: process.env.NODE_ENV || "development",
-  enabled: true,
-  samplingRate: 1.0, // 100% sampling for development
-  otlpEndpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT || "http://localhost:4318",
-  consoleExport: process.env.NODE_ENV === "development", // Console export in dev mode
-  enableMetrics: true,
-  metricsExportIntervalMs: 60000, // Export metrics every minute
-  enableRedisInstrumentation: true,
+  // Optional: Override defaults if needed
+  // otlpEndpoint: "http://your-collector:4318",
+  // samplingRate: 0.5, // 50% sampling
 });
 
 // Create HTTP server and Socket.IO
@@ -48,11 +42,11 @@ const redis = new Redis(redisUrl);
 // Setup Socket.IO Redis adapter
 io.adapter(createAdapter(pubClient, subClient));
 
-// Add Socket.IO tracing middleware
-createSocketTraceMiddleware(io, "realtime-presence-service");
+// Add Socket.IO tracing middleware (service name is auto-detected)
+createSocketTraceMiddleware(io);
 
-// Initialize metrics
-const metrics = createMetrics(redis);
+// Initialize metrics (optional, auto-created if not called)
+createMetrics(redis);
 
 let presenceRuntime: PresenceRuntime | null = null;
 
@@ -63,27 +57,9 @@ initPresence({
   ttlMs: 30_000,
   reaperIntervalMs: 3_000,
   reaperLookbackMs: 60_000,
-  logger: {
-    debug: (message: string, meta?: unknown) => {
-      console.debug(message, meta ?? "");
-    },
-    info: (message: string, meta?: unknown) => {
-      console.log(message, meta ?? "");
-    },
-    warn: (message: string, meta?: unknown) => {
-      console.warn(message, meta ?? "");
-    },
-    error: (message: string, meta?: unknown) => {
-      console.error(message, meta ?? "");
-    },
-  },
-  // Enable optimizations
+  // Optimizations are optional - defaults work well
   optimizations: {
     enableHeartbeatBatching: true,
-    heartbeatBatchWindowMs: 50,
-    heartbeatMaxBatchSize: 100,
-    enableLuaHeartbeat: false, // Can enable for even better performance
-    enableTransactionalMetadata: false,
   },
 })
   .then((runtime) => {
