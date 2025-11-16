@@ -82,11 +82,53 @@ export function initTracing(config: TracingConfig = {}): void {
   // Configure trace exporters
   const traceExporters = [];
 
-  // OTLP exporter for production backends (Jaeger, Tempo, etc.)
+  // Prepare OTLP exporter configuration
+  const otlpHeaders: Record<string, string> = {};
+
+  // Parse custom headers from environment
+  if (process.env.OTEL_EXPORTER_OTLP_HEADERS) {
+    const headerPairs = process.env.OTEL_EXPORTER_OTLP_HEADERS.split(",");
+    headerPairs.forEach((pair) => {
+      const [key, value] = pair.split("=");
+      if (key && value) {
+        otlpHeaders[key.trim()] = value.trim();
+      }
+    });
+  }
+
+  // Auto-configure for specific backends
+  // SigNoz Cloud
+  if (process.env.SIGNOZ_ACCESS_TOKEN) {
+    otlpHeaders["signoz-access-token"] = process.env.SIGNOZ_ACCESS_TOKEN;
+  }
+
+  // Grafana Cloud
+  if (process.env.GRAFANA_INSTANCE_ID && process.env.GRAFANA_API_KEY) {
+    const auth = Buffer.from(
+      `${process.env.GRAFANA_INSTANCE_ID}:${process.env.GRAFANA_API_KEY}`
+    ).toString("base64");
+    otlpHeaders["Authorization"] = `Basic ${auth}`;
+  }
+
+  // Honeycomb
+  if (process.env.HONEYCOMB_API_KEY) {
+    otlpHeaders["x-honeycomb-team"] = process.env.HONEYCOMB_API_KEY;
+    if (process.env.HONEYCOMB_DATASET) {
+      otlpHeaders["x-honeycomb-dataset"] = process.env.HONEYCOMB_DATASET;
+    }
+  }
+
+  // New Relic
+  if (process.env.NEW_RELIC_LICENSE_KEY) {
+    otlpHeaders["api-key"] = process.env.NEW_RELIC_LICENSE_KEY;
+  }
+
+  // OTLP exporter for production backends (Jaeger, Tempo, SigNoz, etc.)
   traceExporters.push(
     new BatchSpanProcessor(
       new OTLPTraceExporter({
         url: `${otlpEndpoint}/v1/traces`,
+        headers: Object.keys(otlpHeaders).length > 0 ? otlpHeaders : undefined,
       })
     )
   );
@@ -104,6 +146,7 @@ export function initTracing(config: TracingConfig = {}): void {
       new PeriodicExportingMetricReader({
         exporter: new OTLPMetricExporter({
           url: `${otlpEndpoint}/v1/metrics`,
+          headers: Object.keys(otlpHeaders).length > 0 ? otlpHeaders : undefined,
         }),
         exportIntervalMillis: metricsExportIntervalMs,
       })
