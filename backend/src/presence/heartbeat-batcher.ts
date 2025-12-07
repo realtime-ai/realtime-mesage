@@ -1,6 +1,6 @@
 import type { Redis } from "ioredis";
-import { connKey, roomLastSeenKey, roomConnMetadataKey } from "./keys";
-import type { HeartbeatOptions } from "./types";
+import { connKey, roomLastSeenKey, roomConnMetadataKey, roomEventsChannel } from "./keys";
+import type { HeartbeatOptions, PresenceEventPayload } from "./types";
 import type { PresenceConnectionMetadata } from "./types";
 
 export interface HeartbeatBatcherOptions {
@@ -40,6 +40,12 @@ interface HeartbeatResult {
   changed: boolean;
   epoch?: number;
   error?: string;
+  // 用于发布事件的额外数据
+  eventData?: {
+    roomId: string;
+    userId: string;
+    state: Record<string, unknown> | null;
+  };
 }
 
 /**
@@ -235,13 +241,74 @@ export class HeartbeatBatcher {
         writePipeline.hset(key, "state", nextStateJson);
       }
 
-      results.push({ connId, changed: stateChanged, epoch: effectiveEpoch });
+      // 收集结果，包含事件发布所需数据
+      const result: HeartbeatResult = {
+        connId,
+        changed: stateChanged,
+        epoch: effectiveEpoch,
+      };
+
+      // 如果状态变化，收集事件数据
+      if (stateChanged && nextStateJson) {
+        result.eventData = {
+          roomId,
+          userId: connDetails.user_id,
+          state: JSON.parse(nextStateJson),
+        };
+      }
+
+      results.push(result);
     }
 
     // 3. 执行批量写入
     await writePipeline.exec();
 
+    // 4. 发布状态变更事件
+    await this.publishUpdateEvents(results, now);
+
     return results;
+  }
+
+  /**
+   * 发布状态变更事件
+   */
+  private async publishUpdateEvents(
+    results: HeartbeatResult[],
+    timestamp: number
+  ): Promise<void> {
+    const eventsToPublish = results.filter(
+      (r) => r.changed && r.eventData && !r.error
+    );
+
+    if (eventsToPublish.length === 0) {
+      return;
+    }
+
+    // 使用 Pipeline 批量发布事件
+    const publishPipeline = this.redis.pipeline();
+
+    for (const result of eventsToPublish) {
+      if (!result.eventData) continue;
+
+      const event: PresenceEventPayload = {
+        type: "update",
+        roomId: result.eventData.roomId,
+        userId: result.eventData.userId,
+        connId: result.connId,
+        state: result.eventData.state,
+        ts: timestamp,
+        epoch: result.epoch,
+      };
+
+      const channel = roomEventsChannel(result.eventData.roomId);
+      publishPipeline.publish(channel, JSON.stringify(event));
+    }
+
+    try {
+      await publishPipeline.exec();
+    } catch (error) {
+      this.options.logger.error("Failed to publish heartbeat update events", error);
+    }
   }
 
   /**

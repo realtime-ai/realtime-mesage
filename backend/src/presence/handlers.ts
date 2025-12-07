@@ -1,15 +1,17 @@
 import type { Server, Socket } from "socket.io";
 import type { Redis } from "ioredis";
 import { z } from "zod";
-import { connKey } from "./keys";
+import { connKey, roomEventsChannel } from "./keys";
 import type { PresenceService } from "./service";
 import { MetadataError } from "./service";
 import type {
   ChannelMetadataResponse,
   PresenceSnapshotEntry,
+  PresenceEventPayload,
 } from "./types";
 import type { HeartbeatBatcher } from "./heartbeat-batcher";
 import type { LuaHeartbeatExecutor } from "./lua-heartbeat-executor";
+import type { LuaJoinExecutor } from "./lua-join-executor";
 import type { TransactionalMetadataWrapper } from "./metadata-transactional";
 
 export interface PresenceHandlerContext {
@@ -18,6 +20,7 @@ export interface PresenceHandlerContext {
   logger: Pick<Console, "debug" | "info" | "warn" | "error">;
   heartbeatBatcher?: HeartbeatBatcher | null;
   luaHeartbeatExecutor?: LuaHeartbeatExecutor | null;
+  luaJoinExecutor?: LuaJoinExecutor | null;
   transactionalMetadata?: TransactionalMetadataWrapper | null;
 }
 
@@ -137,22 +140,58 @@ export function registerPresenceHandlers(
 
         await socket.join(payload.roomId);
         try {
-          const snapshot = await service.join({
-            roomId: payload.roomId,
-            userId: payload.userId,
-            connId: socket.id,
-            state: payload.state,
-          });
+          let epoch: number;
+          let snapshot: PresenceSnapshotEntry[];
+
+          // 优先使用 Lua 脚本优化（原子操作）
+          if (context.luaJoinExecutor) {
+            const joinOptions = {
+              roomId: payload.roomId,
+              userId: payload.userId,
+              connId: socket.id,
+              state: payload.state,
+            };
+
+            // 原子 join 操作
+            epoch = await context.luaJoinExecutor.join(joinOptions);
+
+            // 发布 join 事件
+            const now = Date.now();
+            const joinEvent: PresenceEventPayload = {
+              type: "join",
+              roomId: payload.roomId,
+              userId: payload.userId,
+              connId: socket.id,
+              state: payload.state ?? {},
+              ts: now,
+              epoch,
+            };
+            await context.redis.publish(
+              roomEventsChannel(payload.roomId),
+              JSON.stringify(joinEvent)
+            );
+
+            // 获取快照
+            snapshot = await service.fetchRoomSnapshot(payload.roomId);
+          } else {
+            // 默认使用原有逻辑
+            snapshot = await service.join({
+              roomId: payload.roomId,
+              userId: payload.userId,
+              connId: socket.id,
+              state: payload.state,
+            });
+
+            const selfEntry = snapshot.find((entry) => entry.connId === socket.id);
+            epoch = selfEntry?.epoch ?? Date.now();
+            if (epoch === undefined || Number.isNaN(epoch)) {
+              const storedEpoch = await context.redis.hget(connKey(socket.id), "epoch");
+              epoch = storedEpoch ? Number(storedEpoch) : Date.now();
+            }
+          }
 
           socket.data.presenceRoomId = payload.roomId;
           socket.data.presenceUserId = payload.userId;
-
-          const selfEntry = snapshot.find((entry) => entry.connId === socket.id);
-          let epoch = selfEntry?.epoch;
-          if (epoch === undefined || Number.isNaN(epoch)) {
-            const storedEpoch = await context.redis.hget(connKey(socket.id), "epoch");
-            epoch = storedEpoch ? Number(storedEpoch) : Date.now();
-          }
 
           ack?.({
             ok: true,

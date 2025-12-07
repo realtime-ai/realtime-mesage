@@ -1,5 +1,5 @@
 import type { Redis } from "ioredis";
-import { channelMetadataKey } from "./keys";
+import { channelMetadataKey, channelMetadataEventsChannel, lockKey } from "./keys";
 import type {
   ChannelMetadataMutationParams,
   ChannelMetadataRemovalParams,
@@ -7,6 +7,7 @@ import type {
   ChannelMetadataOptions,
   ChannelMetadataItemInput,
   ChannelMetadataEntry,
+  ChannelMetadataEventPayload,
 } from "./types";
 import {
   MetadataConflictError,
@@ -85,7 +86,7 @@ export class TransactionalMetadataWrapper {
 
     await this.verifyMetadataLock(params.options?.lockName, params.actorUserId);
 
-    return this.retryTransaction(key, async () => {
+    const response = await this.retryTransaction(key, async () => {
       const state = await this.readChannelMetadataState(key);
       this.ensureMajorRevision(params.options?.majorRevision, state.majorRevision);
 
@@ -113,15 +114,36 @@ export class TransactionalMetadataWrapper {
         throw new MetadataConflictError("Transaction aborted due to concurrent modification");
       }
 
-      return this.buildMetadataResponse(
-        params.channelType,
-        params.channelName,
-        nextRecord,
-        totalCount,
-        nextMajorRevision,
-        timestamp
-      );
+      return {
+        response: this.buildMetadataResponse(
+          params.channelType,
+          params.channelName,
+          nextRecord,
+          totalCount,
+          nextMajorRevision,
+          timestamp
+        ),
+        eventData: {
+          nextRecord,
+          nextMajorRevision,
+          timestamp,
+        },
+      };
     });
+
+    // 事务成功后发布事件
+    const eventItems = this.buildEventItems(response.eventData.nextRecord, getOrderedUniqueKeys(data));
+    await this.publishMetadataEvent({
+      channelName: params.channelName,
+      channelType: params.channelType,
+      operation: "set",
+      items: eventItems,
+      majorRevision: response.eventData.nextMajorRevision,
+      timestamp: response.eventData.timestamp,
+      authorUid: params.actorUserId,
+    });
+
+    return response.response;
   }
 
   /**
@@ -138,7 +160,7 @@ export class TransactionalMetadataWrapper {
 
     await this.verifyMetadataLock(params.options?.lockName, params.actorUserId);
 
-    return this.retryTransaction(key, async () => {
+    const response = await this.retryTransaction(key, async () => {
       const state = await this.readChannelMetadataState(key);
       if (state.totalCount === 0) {
         throw new MetadataValidationError("Channel metadata does not exist");
@@ -181,15 +203,36 @@ export class TransactionalMetadataWrapper {
         throw new MetadataConflictError("Transaction aborted due to concurrent modification");
       }
 
-      return this.buildMetadataResponse(
-        params.channelType,
-        params.channelName,
-        nextRecord,
-        totalCount,
-        nextMajorRevision,
-        timestamp
-      );
+      return {
+        response: this.buildMetadataResponse(
+          params.channelType,
+          params.channelName,
+          nextRecord,
+          totalCount,
+          nextMajorRevision,
+          timestamp
+        ),
+        eventData: {
+          nextRecord,
+          nextMajorRevision,
+          timestamp,
+        },
+      };
     });
+
+    // 事务成功后发布事件
+    const eventItems = this.buildEventItems(response.eventData.nextRecord, getOrderedUniqueKeys(params.data));
+    await this.publishMetadataEvent({
+      channelName: params.channelName,
+      channelType: params.channelType,
+      operation: "update",
+      items: eventItems,
+      majorRevision: response.eventData.nextMajorRevision,
+      timestamp: response.eventData.timestamp,
+      authorUid: params.actorUserId,
+    });
+
+    return response.response;
   }
 
   /**
@@ -202,20 +245,23 @@ export class TransactionalMetadataWrapper {
 
     await this.verifyMetadataLock(params.options?.lockName, params.actorUserId);
 
-    return this.retryTransaction(key, async () => {
+    const response = await this.retryTransaction(key, async () => {
       const state = await this.readChannelMetadataState(key);
       this.ensureMajorRevision(params.options?.majorRevision, state.majorRevision);
 
       if (state.totalCount === 0) {
         const timestamp = Date.now();
-        return this.buildMetadataResponse(
-          params.channelType,
-          params.channelName,
-          state.metadata,
-          state.totalCount,
-          state.majorRevision,
-          timestamp
-        );
+        return {
+          response: this.buildMetadataResponse(
+            params.channelType,
+            params.channelName,
+            state.metadata,
+            state.totalCount,
+            state.majorRevision,
+            timestamp
+          ),
+          eventData: null, // 无变更，不需要发布事件
+        };
       }
 
       const nextRecord = cloneMetadataRecord(state.metadata);
@@ -224,20 +270,33 @@ export class TransactionalMetadataWrapper {
           ? getOrderedUniqueKeys(params.data)
           : Object.keys(nextRecord);
 
+      // 收集被删除的条目用于事件发布
+      const removedItems: ChannelMetadataItemInput[] = [];
       keysToRemove.forEach((keyName) => {
-        delete nextRecord[keyName];
+        const existing = nextRecord[keyName];
+        if (existing) {
+          removedItems.push({
+            key: keyName,
+            value: existing.value,
+            revision: existing.revision,
+          });
+          delete nextRecord[keyName];
+        }
       });
 
-      if (keysToRemove.length === 0) {
+      if (removedItems.length === 0) {
         const timestamp = Date.now();
-        return this.buildMetadataResponse(
-          params.channelType,
-          params.channelName,
-          nextRecord,
-          state.totalCount,
-          state.majorRevision,
-          timestamp
-        );
+        return {
+          response: this.buildMetadataResponse(
+            params.channelType,
+            params.channelName,
+            nextRecord,
+            state.totalCount,
+            state.majorRevision,
+            timestamp
+          ),
+          eventData: null, // 无变更，不需要发布事件
+        };
       }
 
       const timestamp = Date.now();
@@ -258,15 +317,37 @@ export class TransactionalMetadataWrapper {
         throw new MetadataConflictError("Transaction aborted due to concurrent modification");
       }
 
-      return this.buildMetadataResponse(
-        params.channelType,
-        params.channelName,
-        nextRecord,
-        totalCount,
-        nextMajorRevision,
-        timestamp
-      );
+      return {
+        response: this.buildMetadataResponse(
+          params.channelType,
+          params.channelName,
+          nextRecord,
+          totalCount,
+          nextMajorRevision,
+          timestamp
+        ),
+        eventData: {
+          removedItems,
+          nextMajorRevision,
+          timestamp,
+        },
+      };
     });
+
+    // 事务成功后发布事件（如果有变更）
+    if (response.eventData) {
+      await this.publishMetadataEvent({
+        channelName: params.channelName,
+        channelType: params.channelType,
+        operation: "remove",
+        items: response.eventData.removedItems,
+        majorRevision: response.eventData.nextMajorRevision,
+        timestamp: response.eventData.timestamp,
+        authorUid: params.actorUserId,
+      });
+    }
+
+    return response.response;
   }
 
   /**
@@ -316,13 +397,37 @@ export class TransactionalMetadataWrapper {
     throw new MetadataConflictError("Unexpected retry loop exit");
   }
 
-  // ===== 辅助方法（从 PresenceService 复制） =====
+  // ===== 辅助方法 =====
+
+  private async publishMetadataEvent(payload: ChannelMetadataEventPayload): Promise<void> {
+    const channel = channelMetadataEventsChannel(payload.channelType, payload.channelName);
+    await this.redis.publish(channel, JSON.stringify(payload));
+  }
+
+  private buildEventItems(
+    record: ChannelMetadataRecord,
+    keys: string[]
+  ): ChannelMetadataItemInput[] {
+    return keys
+      .map((key) => {
+        const entry = record[key];
+        if (!entry) {
+          return null;
+        }
+        return {
+          key,
+          value: entry.value,
+          revision: entry.revision,
+        };
+      })
+      .filter((item): item is ChannelMetadataItemInput => item !== null);
+  }
 
   private async verifyMetadataLock(lockName?: string, actorUserId?: string): Promise<void> {
     if (!lockName) {
       return;
     }
-    const owner = await this.redis.get(`prs:lock:${lockName}`);
+    const owner = await this.redis.get(lockKey(lockName));
     if (!owner) {
       throw new MetadataLockError(`Lock "${lockName}" is not held by any user`);
     }
