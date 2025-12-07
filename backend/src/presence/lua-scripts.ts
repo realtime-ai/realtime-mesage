@@ -205,6 +205,89 @@ return cjson.encode(results)
 `;
 
 /**
+ * Join Lua 脚本
+ *
+ * 原子化执行 join 操作，解决 read-then-write 竞态条件
+ *
+ * KEYS[1]: prs:conn:<connId>
+ * KEYS[2]: prs:{room:<roomId>}:members
+ * KEYS[3]: prs:{room:<roomId>}:conns
+ * KEYS[4]: prs:{room:<roomId>}:last_seen
+ * KEYS[5]: prs:{room:<roomId>}:conn_meta
+ * KEYS[6]: prs:user:<userId>:conns
+ * KEYS[7]: prs:active_rooms
+ *
+ * ARGV[1]: connId
+ * ARGV[2]: userId
+ * ARGV[3]: roomId
+ * ARGV[4]: stateJson
+ * ARGV[5]: now (timestamp)
+ * ARGV[6]: ttlMs
+ *
+ * Returns: JSON string
+ * - Success: {"ok":1,"epoch":123}
+ * - Error: {"ok":0,"error":"message"}
+ */
+export const JOIN_SCRIPT = `
+local connKey = KEYS[1]
+local roomMembersKey = KEYS[2]
+local roomConnsKey = KEYS[3]
+local roomLastSeenKey = KEYS[4]
+local roomConnMetaKey = KEYS[5]
+local userConnsKey = KEYS[6]
+local activeRoomsKey = KEYS[7]
+
+local connId = ARGV[1]
+local userId = ARGV[2]
+local roomId = ARGV[3]
+local stateJson = ARGV[4]
+local now = tonumber(ARGV[5])
+local ttlMs = tonumber(ARGV[6])
+
+-- 1. 读取现有 epoch（如果存在）并计算下一个 epoch
+local existingEpoch = redis.call('HGET', connKey, 'epoch')
+local epoch = now
+if existingEpoch then
+  local prevEpoch = tonumber(existingEpoch) or 0
+  if prevEpoch > 0 then
+    epoch = math.max(prevEpoch + 1, now)
+  end
+end
+
+-- 2. 创建/更新连接 Hash
+redis.call('HMSET', connKey,
+  'conn_id', connId,
+  'user_id', userId,
+  'room_id', roomId,
+  'last_seen_ms', tostring(now),
+  'epoch', tostring(epoch),
+  'state', stateJson
+)
+redis.call('PEXPIRE', connKey, ttlMs)
+
+-- 3. 更新房间索引
+redis.call('SADD', roomMembersKey, userId)
+redis.call('SADD', roomConnsKey, connId)
+redis.call('ZADD', roomLastSeenKey, now, connId)
+
+-- 4. 更新 conn_meta
+local metaJson = cjson.encode({ userId = userId, epoch = epoch })
+redis.call('HSET', roomConnMetaKey, connId, metaJson)
+
+-- 5. 更新用户连接集合
+redis.call('SADD', userConnsKey, connId)
+
+-- 6. 标记房间为活跃
+redis.call('SADD', activeRoomsKey, roomId)
+
+-- 7. 返回结果
+return cjson.encode({
+  ok = 1,
+  epoch = epoch
+})
+`;
+
+/**
  * Lua 脚本 SHA1 缓存
  */
 export const scriptSHAs = new Map<string, string>();

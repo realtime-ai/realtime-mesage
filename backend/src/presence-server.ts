@@ -10,6 +10,7 @@ import type {
 } from "./presence/types";
 import { HeartbeatBatcher } from "./presence/heartbeat-batcher";
 import { LuaHeartbeatExecutor } from "./presence/lua-heartbeat-executor";
+import { LuaJoinExecutor } from "./presence/lua-join-executor";
 import { TransactionalMetadataWrapper } from "./presence/metadata-transactional";
 
 export interface PresenceLogger {
@@ -52,6 +53,13 @@ export interface PresenceOptimizationOptions {
   enableLuaHeartbeat?: boolean;
 
   /**
+   * 启用 Lua 脚本优化 Join
+   * 将 Join 操作原子化，解决 read-then-write 竞态条件
+   * @default false
+   */
+  enableLuaJoin?: boolean;
+
+  /**
    * 启用 Metadata 事务性操作（WATCH/MULTI）
    * 使用 Redis 事务保证原子性，避免应用层竞态
    * @default false
@@ -89,6 +97,10 @@ export interface PresenceRuntime {
    * 获取 Lua 心跳执行器（如果启用）
    */
   getLuaHeartbeatExecutor(): LuaHeartbeatExecutor | null;
+  /**
+   * 获取 Lua Join 执行器（如果启用）
+   */
+  getLuaJoinExecutor(): LuaJoinExecutor | null;
   /**
    * 获取事务性 Metadata 包装器（如果启用）
    */
@@ -134,6 +146,7 @@ export async function initPresence(options: PresenceInitOptions): Promise<Presen
   const opts = options.optimizations ?? {};
   let heartbeatBatcher: HeartbeatBatcher | null = null;
   let luaHeartbeatExecutor: LuaHeartbeatExecutor | null = null;
+  let luaJoinExecutor: LuaJoinExecutor | null = null;
   let transactionalMetadata: TransactionalMetadataWrapper | null = null;
 
   if (opts.enableHeartbeatBatching) {
@@ -158,6 +171,15 @@ export async function initPresence(options: PresenceInitOptions): Promise<Presen
     logger.info("Lua heartbeat optimization enabled");
   }
 
+  if (opts.enableLuaJoin) {
+    luaJoinExecutor = new LuaJoinExecutor(options.redis, {
+      ttlMs,
+      logger,
+    });
+    await luaJoinExecutor.warmup();
+    logger.info("Lua join optimization enabled");
+  }
+
   if (opts.enableTransactionalMetadata) {
     transactionalMetadata = new TransactionalMetadataWrapper(options.redis, {
       maxRetries: opts.metadataMaxRetries,
@@ -176,6 +198,7 @@ export async function initPresence(options: PresenceInitOptions): Promise<Presen
       logger,
       heartbeatBatcher,
       luaHeartbeatExecutor,
+      luaJoinExecutor,
       transactionalMetadata,
     };
     registerPresenceHandlers(handlerContext, service);
@@ -198,6 +221,9 @@ export async function initPresence(options: PresenceInitOptions): Promise<Presen
     },
     getLuaHeartbeatExecutor(): LuaHeartbeatExecutor | null {
       return luaHeartbeatExecutor;
+    },
+    getLuaJoinExecutor(): LuaJoinExecutor | null {
+      return luaJoinExecutor;
     },
     getTransactionalMetadata(): TransactionalMetadataWrapper | null {
       return transactionalMetadata;

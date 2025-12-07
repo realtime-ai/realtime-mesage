@@ -2,6 +2,8 @@ export { PresenceService } from "./service";
 export type { PresenceServiceOptions } from "./service";
 export { registerPresenceHandlers } from "./handlers";
 export type { PresenceHandlerContext } from "./handlers";
+export { LuaJoinExecutor } from "./lua-join-executor";
+export type { LuaJoinExecutorOptions } from "./lua-join-executor";
 export * as presenceKeys from "./keys";
 export type {
   PresenceEventPayload,

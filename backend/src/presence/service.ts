@@ -174,19 +174,17 @@ export class PresenceService {
     pipeline.zadd(roomLastSeenKey(roomId), now, options.connId);
     if (effectiveEpoch !== currentEpoch) {
       pipeline.hset(key, "epoch", effectiveEpoch.toString());
-    }
-    if (stateChanged && nextStateJson) {
-      pipeline.hset(key, "state", nextStateJson);
-    }
-    await pipeline.exec();
-
-    if (effectiveEpoch !== currentEpoch) {
-      await this.redis.hset(
+      // 将 conn_meta 更新也包含在同一个 pipeline 中，保证原子性
+      pipeline.hset(
         roomConnMetadataKey(roomId),
         options.connId,
         stringifyMetadata({ userId: details.user_id, epoch: effectiveEpoch })
       );
     }
+    if (stateChanged && nextStateJson) {
+      pipeline.hset(key, "state", nextStateJson);
+    }
+    await pipeline.exec();
 
     if (stateChanged) {
       await this.publishEvent({
